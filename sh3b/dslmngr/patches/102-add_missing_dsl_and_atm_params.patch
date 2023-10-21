@@ -1,0 +1,80 @@
+diff --git a/dslmngr.c b/dslmngr.c
+index 01a9d50..b09dac4 100644
+--- a/dslmngr.c
++++ b/dslmngr.c
+@@ -626,10 +626,15 @@ static void dsl_stats_to_blob(const struct dsl_line_channel_stats *stats, struct
+ 	blobmsg_add_u64(bb, "quarter_hour_start", stats->quarter_hour_start);
+ }
+ 
+-static void dsl_stats_line_interval_to_blob(const struct dsl_line_stats_interval *stats, struct blob_buf *bb)
++static void dsl_stats_line_interval_to_blob(enum dsl_stats_type type, const struct dsl_line_stats_interval *stats, struct blob_buf *bb)
+ {
+ 	blobmsg_add_u64(bb, "errored_secs", stats->errored_secs);
+ 	blobmsg_add_u64(bb, "severely_errored_secs", stats->severely_errored_secs);
++
++	if (type == DSL_STATS_CURRENTDAY) {
++		blobmsg_add_u64(bb, "loss_of_framing", stats->loss_of_framing);
++		blobmsg_add_u64(bb, "cell_delin", stats->cell_delin);
++	}
+ }
+ 
+ static void dsl_stats_channel_interval_to_blob(const struct dsl_channel_stats_interval *stats, struct blob_buf *bb)
+@@ -704,7 +709,7 @@ int dsl_stats_all(struct ubus_context *ctx, struct ubus_object *obj,
+ 					goto __ret;
+ 				}
+ 			}
+-			dsl_stats_line_interval_to_blob(&line_stats_interval, &bb);
++			dsl_stats_line_interval_to_blob(dsl_stats_types[j].value, &line_stats_interval, &bb);
+ 
+ 			blobmsg_close_table(&bb, table_interval);
+ 		}
+@@ -877,7 +882,7 @@ int dsl_line_stats(struct ubus_context *ctx, struct ubus_object *obj,
+ 			}
+ 		}
+ 
+-		dsl_stats_line_interval_to_blob(&line_stats_interval, &bb);
++		dsl_stats_line_interval_to_blob(type, &line_stats_interval, &bb);
+ 	} else {
+ 		// Get interface counters
+ 		if (line.link_status == LINK_NOSIGNAL) {
+@@ -912,7 +917,7 @@ int dsl_line_stats(struct ubus_context *ctx, struct ubus_object *obj,
+ 					goto __ret;
+ 				}
+ 			}
+-			dsl_stats_line_interval_to_blob(&line_stats_interval, &bb);
++			dsl_stats_line_interval_to_blob(dsl_stats_types[i].value, &line_stats_interval, &bb);
+ 
+ 			blobmsg_close_table(&bb, table);
+ 		}
+@@ -1561,6 +1566,7 @@ static void atm_link_stats_to_blob(const struct atm_link_stats *stats, struct bl
+ 	blobmsg_add_u64(bb, "transmitted_blocks", stats->transmitted_blocks);
+ 	blobmsg_add_u64(bb, "received_blocks", stats->received_blocks);
+ 	blobmsg_add_u64(bb, "crc_errors", stats->crc_errors);
++	blobmsg_add_u64(bb, "hec_errors", stats->hec_errors);
+ }
+ 
+ int atm_link_stats_handler(struct ubus_context *ctx, struct ubus_object *obj,
+@@ -1726,10 +1732,11 @@ int atm_link_configure(struct ubus_context *ctx, struct ubus_object *obj,
+ 	return 0;
+ }
+ 
++// Only atm_link_stats function is needed for now (HFC-2258)
+ static struct ubus_method atm_link_methods[] = {
+-	{ .name = "status", .handler = atm_link_status },
++	//{ .name = "status", .handler = atm_link_status },
+ 	{ .name = "stats",  .handler = atm_link_stats_handler },
+-	UBUS_METHOD("configure", atm_link_configure,  atm_configure_policy)
++	//UBUS_METHOD("configure", atm_link_configure,  atm_configure_policy)
+ };
+ 
+ static struct ubus_object_type atm_link_type = UBUS_OBJECT_TYPE("atm.link", atm_link_methods);
+@@ -2026,7 +2033,8 @@ int dsl_add_ubus_objects(struct ubus_context *ctx)
+ 	}
+ 
+ 	// Add objects atm.link.x if supported
+-	if (atm_funcs.get_link_info && atm_funcs.get_link_stats && atm_funcs.configure) {
++	// Only atm_link_stats function is needed for now (HFC-2258)
++	if (atm_funcs.get_link_stats) {
+ 		atm_objects = calloc(max_line, sizeof(struct ubus_object));
+ 		if (!atm_objects) {
+ 			DSLMNGR_LOG(LOG_ERR, "Out of memory\n");

@@ -1,0 +1,24 @@
+--- a/init/halt.c	2021-12-26 16:53:20.000000000 +0000
++++ b/init/halt.c	2023-08-08 14:16:49.526868863 +0000
+@@ -119,6 +118,12 @@
+ #define write_wtmp() ((void)0)
+ #endif
+ 
++static void write_reason(void)
++{
++	// TODO: find a better way to do this
++	system("/usr/sbin/rebootcause -s CLI\n");
++}
++
+ #if ENABLE_FEATURE_WAIT_FOR_INIT
+ /* In Linux, "poweroff" may be spawned even before init.
+  * For example, with ACPI:
+@@ -198,6 +203,8 @@
+ 
+ 	write_wtmp();
+ 
++	write_reason();
++
+ 	if (flags & 8) /* -w */
+ 		return EXIT_SUCCESS;
+ 

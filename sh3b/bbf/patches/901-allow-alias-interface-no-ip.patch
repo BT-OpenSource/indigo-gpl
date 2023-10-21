@@ -1,0 +1,14 @@
+diff --git a/dmtree/tr181/ip.c b/dmtree/tr181/ip.c
+index 4e4062c..d1352de 100644
+--- a/dmtree/tr181/ip.c
++++ b/dmtree/tr181/ip.c
+@@ -659,9 +659,6 @@ static int browseIPInterfaceIPv4AddressInst(struct dmctx *dmctx, DMNODE *parent_
+ 			ipaddr = dmjson_get_value(ipv4_obj, 1, "address");
+ 		}
+ 
+-		if (*ipaddr == '\0' && added_by_controller && DM_LSTRCMP(added_by_controller, "1") != 0)
+-			continue;
+-
+ 		if (dmmap_s == NULL)
+ 			dmmap_s = add_dmmap_network_interface_ipv4("dmmap_network_ipv4", "intf_ipv4", section_name(parent_sec), section_name(intf_s));
+ 

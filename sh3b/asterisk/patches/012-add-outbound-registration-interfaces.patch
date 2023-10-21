@@ -1,0 +1,255 @@
+--- /dev/null
++++ b/include/asterisk/res_pjsip_outbound_registration.h
+@@ -0,0 +1,33 @@
++/* Copyright (c) 2021 BT plc. All rights reserved. */
++
++#ifndef _RES_PJSIP_OUTBOUND_REGISTRATION_H
++#define _RES_PJSIP_OUTBOUND_REGISTRATION_H
++
++/*!
++ * \brief Start outbound registrations
++ *
++ * For all configured registrations, send a new REGISTER request and create a
++ * new registration.
++ */
++void pjsip_outbound_registration_register(void);
++
++/*!
++ * \brief End outbound registrations
++ *
++ * For all configured registrations, send a new REGISTER request with the
++ * expiration time set to 0, which effectively ends any existing registration.
++ */
++void pjsip_outbound_registration_unregister(void);
++
++/*!
++ * \brief Shorten the expiration time of an existing registration
++ *
++ * Forces the re-registration of an existing registration to occur earlier than
++ * the expiration time agreed during registration establishment.
++ *
++ * \param expires New expiration time, used to schedule re-registration
++ * \param uri URI used to identify existing registration
++ */
++void pjsip_outbound_registration_shorten(unsigned int expires, const char *uri);
++
++#endif /* _RES_PJSIP_OUTBOUND_REGISTRATION_H */
+
+--- /dev/null
++++ b/res/res_pjsip_outbound_registration.exports.in
+@@ -0,0 +1,6 @@
++{
++       global:
++               LINKER_SYMBOL_PREFIXpjsip_outbound_registration*;
++       local:
++               *;
++};
+
+--- a/res/res_pjsip_outbound_registration.c
++++ b/res/res_pjsip_outbound_registration.c
+@@ -30,6 +30,7 @@
+ 
+ #include "asterisk/res_pjsip.h"
+ #include "asterisk/res_pjsip_cli.h"
++#include "asterisk/res_pjsip_outbound_registration.h"
+ #include "asterisk/module.h"
+ #include "asterisk/taskprocessor.h"
+ #include "asterisk/cli.h"
+@@ -2605,6 +2606,104 @@
+ 	reregister_all();
+ }
+ 
++/* Structure used to pass information from external API to the serialiser */
++struct sip_outbound_registration_shorten {
++	struct sip_outbound_registration_state *state;
++	unsigned int expires;
++};
++
++/* Serialiser task to schedule re-registration */
++static int shorten_task(void *obj)
++{
++	struct sip_outbound_registration_shorten *shorten = obj;
++
++	schedule_registration(shorten->state->client_state,
++			next_registration_time(shorten->expires));
++
++	ao2_ref(shorten->state, -1);
++	ao2_cleanup(shorten);
++
++	return 0;
++}
++
++/* Queue new serialiser request to shorten registration expiration time */
++static int queue_shorten(struct sip_outbound_registration_state *state, unsigned int expires)
++{
++	struct sip_outbound_registration_shorten *shorten;
++
++	shorten = ao2_alloc(sizeof(*shorten), NULL);
++	if (!shorten) {
++		return -1;
++	}
++
++	shorten->expires = expires;
++	shorten->state = state;
++	ao2_ref(state, +1);
++
++	if (ast_sip_push_task(state->client_state->serializer, shorten_task, shorten)) {
++		ao2_ref(state, -1);
++		ao2_cleanup(shorten);
++		return -1;
++	}
++	return 0;
++}
++
++/* Comparison function used to find registration object based on URI */
++static int client_uri_compare(void *obj, void *arg, int flags)
++{
++	struct sip_outbound_registration_state *state = obj;
++	const char *uri = arg;
++
++	return strstr(state->registration->client_uri, uri) ? CMP_MATCH : 0;
++}
++
++/* External API to shorten registration expiration time */
++void pjsip_outbound_registration_shorten(unsigned int expires, const char *uri)
++{
++	RAII_VAR(struct ao2_container *, states, NULL, ao2_cleanup);
++	RAII_VAR(struct sip_outbound_registration_state *, state, NULL, ao2_cleanup);
++
++	states = ao2_global_obj_ref(current_states);
++	if (!states) {
++		ast_log(LOG_WARNING, "Unable to get registration states\n");
++		return;
++	}
++
++	state = ao2_callback(states, 0, client_uri_compare, (void *)uri);
++	if (!state) {
++		ast_log(LOG_WARNING, "No registration found with URI: %s\n", uri);
++		return;
++	}
++
++	/*
++	 * Check this is a request to shorten the expiration time and not extend
++	 * it. Ideally, we would check the value of the running re-registration
++	 * timer but this is not trivial so just do basic sanity check.
++	 */
++	if (expires >= state->registration->expiration) {
++		ast_log(LOG_WARNING, "Requested expiration time not valid (%d %d)\n",
++				expires, state->registration->expiration);
++		return;
++	}
++
++	if (queue_shorten(state, expires)) {
++		ast_log(LOG_WARNING, "Failed to queue registration shorten request\n");
++		return;
++	}
++}
++
++/* External API to unregister all */
++void pjsip_outbound_registration_unregister(void)
++{
++	unregister_all();
++}
++
++/* External API to (re-)register all */
++void pjsip_outbound_registration_register(void)
++{
++	reregister_all();
++}
++
+ static int unload_module(void)
+ {
+ 	int remaining;
+@@ -2765,7 +2864,7 @@
+ 	return 0;
+ }
+ 
+-AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_LOAD_ORDER, "PJSIP Outbound Registration Support",
++AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_GLOBAL_SYMBOLS | AST_MODFLAG_LOAD_ORDER, "PJSIP Outbound Registration Support",
+ 	.support_level = AST_MODULE_SUPPORT_CORE,
+ 	.load = load_module,
+ 	.reload = reload_module,
+
+--- a/res/res_pjsip_pubsub.c
++++ b/res/res_pjsip_pubsub.c
+@@ -1881,12 +1881,6 @@
+ 		return NULL;
+ 	}
+ 
+-	sub = allocate_subscription(handler, resource, sub_tree);
+-	if (!sub) {
+-		ao2_cleanup(sub_tree);
+-		return NULL;
+-	}
+-
+ 	contact = ast_sip_location_retrieve_contact_from_aor_list(endpoint->aors);
+ 	if (!contact || ast_strlen_zero(contact->uri)) {
+ 		ast_log(LOG_WARNING, "No contacts configured for endpoint %s. Unable to create SIP subsription\n",
+@@ -1908,6 +1902,13 @@
+ 	pjsip_evsub_create_uac(dlg, &pubsub_cb, &event, 0, &sub_tree->evsub);
+ 	subscription_setup_dialog(sub_tree, dlg);
+ 
++	/* Subscription needs to be allocated after dialog created */
++	sub = allocate_subscription(handler, resource, sub_tree);
++	if (!sub) {
++		ao2_cleanup(sub_tree);
++		return NULL;
++	}
++
+ 	evsub = sub_tree->evsub;
+ 
+ 	if (pjsip_evsub_initiate(evsub, NULL, -1, &tdata) == PJ_SUCCESS) {
+@@ -3813,7 +3814,26 @@
+ 		pjsip_evsub_get_state_name(evsub), pjsip_event_str(event->type), sub_tree,
+ 		(sub_tree ? sub_tree_state_description[sub_tree->state] : "UNKNOWN"));
+ 
+-	if (!sub_tree || pjsip_evsub_get_state(evsub) != PJSIP_EVSUB_STATE_TERMINATED) {
++	if (!sub_tree) {
++		return;
++	}
++
++	pjsip_transaction *tsx = event->body.tsx_state.tsx;
++	if (tsx != NULL && (tsx->status_code == 401 || tsx->status_code == 407)) {
++		pjsip_tx_data *tdata;
++		ast_debug(3, "Authentication required... %s\n", pjsip_event_str(event->body.tsx_state.type));
++
++		if (!ast_sip_create_request_with_auth(&(sub_tree->endpoint->outbound_auths),
++					event->body.tsx_state.src.rdata, tsx->last_tx, &tdata)) {
++			ast_debug(1, "Sending authenticated SUBSCRIBE\n");
++			pjsip_evsub_send_request(sub_tree->evsub, tdata);
++		} else {
++			ast_log(LOG_WARNING, "Failed to create authenticated SUBSCRIBE\n");
++		}
++		return;
++	}
++
++	if (pjsip_evsub_get_state(evsub) != PJSIP_EVSUB_STATE_TERMINATED) {
+ 		return;
+ 	}
+ 
+@@ -3956,14 +3976,19 @@
+ static void pubsub_on_rx_notify(pjsip_evsub *evsub, pjsip_rx_data *rdata, int *p_st_code,
+ 		pj_str_t **p_st_text, pjsip_hdr *res_hdr, pjsip_msg_body **p_body)
+ {
+-	struct ast_sip_subscription *sub;
+-
+-	if (!(sub = pjsip_evsub_get_mod_data(evsub, pubsub_module.id))) {
+-		return;
+-	}
++	struct ast_sip_subscription_handler *handler;
++	handler = subscription_get_handler_from_rdata(rdata, NULL);
+ 
+-	sub->handler->subscriber->state_change(sub, rdata->msg_info.msg->body,
++	if (handler) {
++		handler->subscriber->state_change(/*sub*/ NULL, rdata->msg_info.msg->body,
+ 			pjsip_evsub_get_state(evsub));
++	}
++
++	/*
++	 * Framework needs to supply the response code but subscriber callback
++	 * has no way of doing that. Assume all ok for now...
++	 */
++	*p_st_code = 200;
+ }
+ 
+ static int serialized_pubsub_on_client_refresh(void *userdata)

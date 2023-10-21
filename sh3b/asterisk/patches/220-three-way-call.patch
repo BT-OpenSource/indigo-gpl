@@ -1,0 +1,297 @@
+--- a/channels/chan_brcm.c
++++ b/channels/chan_brcm.c
+@@ -669,24 +669,24 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
+ 	struct ast_frame astFrame;
+ 	int res = 0;
+ 
+-	ast_debug(2, "Channel %s gets an indication, condition = %d\n", ast_channel_name(ast), condition);
++	ast_log(LOG_NOTICE, "Channel %s gets an indication, condition = %d, sub->channel_state: %s\n", ast_channel_name(ast),
++		condition, state2str(sub->channel_state));
+ 
+-	pvt_lock(sub->parent, "indicate");
+-	//ast_mutex_lock(&sub->parent->lock);
+ 	switch(condition) {
+ 	case AST_CONTROL_UNHOLD:
++		pvt_lock(sub->parent, "indicate");
+ 		brcm_stop_dialtone(sub->parent);
+-
++		pvt_unlock(sub->parent);
+ 		// Play a beep when unholding.
+-		ast_channel_lock(ast);
+ 		play_bridge_channel = ast_channel_get_bridge_channel(ast);
+-		ast_channel_unlock(ast);
+ 		ast_bridge_channel_queue_playfile(play_bridge_channel, NULL, "beep", NULL);
+ 
+ 		sub->channel_state = INCALL;
+ 
+ 		// Tell all participants to re-sync RTP stream.
++		ast_channel_lock(ast);
+ 		myBridge = ast_channel_internal_bridge(ast);
++		ast_channel_unlock(ast);
+ 		memset(&astFrame, 0, sizeof astFrame);
+ 		astFrame.frametype = AST_FRAME_CONTROL;
+ 		astFrame.subclass.integer = AST_CONTROL_SRCUPDATE;
+@@ -696,11 +696,14 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
+ 	case AST_CONTROL_UPDATE_RTP_PEER:
+ 	case AST_CONTROL_SRCUPDATE:
+ 	case AST_CONTROL_SRCCHANGE:
++		pvt_lock(sub->parent, "indicate");
+ 		sub->codec = -1;
+ 		if (sub->channel_state == RINGBACK)
+ 			endpt_signal(sub->parent->line_id, "ringback", "off", NULL);
++		pvt_unlock(sub->parent);
+ 		break;
+ 	case AST_CONTROL_RINGING:
++		pvt_lock(sub->parent, "indicate");
+ 		ast_debug(4, "Got AST_CONTROL_RINGING on %s, sub->codec = %d\n", ast_channel_name(ast), sub->codec);
+ 		sub->channel_state = RINGBACK;
+ 		// Play local ringback tone only if there is no incoming media packet
+@@ -710,6 +713,7 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
+ 			sub->call_id = ast_channel_callid(sub->owner);
+ 			endpt_connection(sub->parent->line_id, sub->call_id, "update");
+ 		}
++		pvt_unlock(sub->parent);
+ 		break;
+ 	case AST_CONTROL_UNHOLD_FOR_TRANSFER:
+ 		if (sub->channel_state == TRANSFERING) {
+@@ -759,12 +763,16 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
+ 		res = -1;
+ 		break;
+ 	case AST_CONTROL_CONNECTED_LINE:
++		ast_log(LOG_DEBUG, "lock: sub->parent: indicate: AST_CONNECTED_LINE\n");
++		pvt_lock(sub->parent, "indicate");
+ 		res = -1;
+ 		ast_debug(4, "Got CONNECTED LINE UPDATE on %s\n", ast_channel_name(ast));
+ 		/* Update caller IDs on display - dect ? */
+ 		struct brcm_subchannel *sub_peer = brcm_subchannel_get_peer(sub);
+ 		if ((sub->connection_id != -1) && (sub_peer->connection_id != -1)) {
++			ast_channel_lock(sub->owner);
+ 			struct ast_bridge *bridge = ast_channel_internal_bridge(sub->owner);
++			ast_channel_unlock(sub->owner);
+ 			struct ast_bridge_channel *bridge_channel;
+ 			if(bridge){
+ 				// Find out which end party of call conference hangs up
+@@ -788,6 +796,8 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
+ 			endpt_connection(sub->parent->line_id, sub->call_id, "update");
+ 			res = 0;
+ 		}
++		ast_log(LOG_DEBUG, "unlock: sub->parent: indicate: AST_CONTTROL_CONNECTED_LINE\n");
++		pvt_unlock(sub->parent);
+ 		break;
+ 
+ 	case AST_CONTROL_BUSY:
+@@ -808,12 +818,17 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
+ 		res = -1;
+ 		break;
+ 	case AST_CONTROL_NORMAL_DIALTONE:
++		pvt_lock(sub->parent, "indicate");
+ 		brcm_dialtone_set(sub->parent, DIALTONE_ON);
++		pvt_unlock(sub->parent);
+ 		break;
+ 	case AST_CONTROL_SPECIAL_DIALTONE:
++		pvt_lock(sub->parent, "indicate");
+ 		brcm_dialtone_set(sub->parent, DIALTONE_SPECIAL_CONDITION);
++		pvt_unlock(sub->parent);
+ 		break;
+-	case AST_CONTROL_PVT_CAUSE_CODE: {
++	case AST_CONTROL_PVT_CAUSE_CODE:
++		  pvt_lock(sub->parent, "indicate");
+ 		  const struct ast_control_pvt_cause_code *cause_code = data;
+ 		  int ast_cause = cause_code->ast_cause;
+ 		  ast_debug(2, "AST_CONTROL_PVT_CAUSE_CODE = %d, chan_name = %s\n", ast_cause, cause_code->chan_name);
+@@ -837,7 +852,7 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
+ 				endpt_signal(sub->parent->line_id, "ringback", "off", NULL);
+ 				if (ast_channel_state(ast) != AST_STATE_UP) {
+ 					/* XXX We should play a busy tone here!! */
+-                                        sub->channel_state = CALLENDED;
++					sub->channel_state = CALLENDED;
+ 					endpt_signal(sub->parent->line_id, "busy", "on", NULL);
+ 					strncpy(sub->parent->extensionCallStatus, "Disconnected", CALL_STATUS_MAX_LEN);
+ 					break;
+@@ -849,15 +864,15 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
+ 		  default:
+ 			  ast_debug(1, "Don't know how to handle cause code %d\n", ast_cause);
+ 			  break;
+-		  }
+ 		}
++		pvt_unlock(sub->parent);
+ 		break;
+ 	default:
+ 		res = -1;
+ 		ast_debug(1, "Don't know how to indicate condition %d\n", condition);
+ 		break;
+ 	}
+-	pvt_unlock(sub->parent);
++
+ 	return res;
+ }
+ 
+@@ -876,7 +891,9 @@ static int brcm_getRtpStats(struct ast_channel *ast)
+ 		if (endpt_get_rtp_stats(sub->parent->line_id)) {
+ 			ast_log(LOG_WARNING, "Unable to get RTP statistics\n");
+ 		}
++		ast_channel_lock(ast);
+ 		ast_channel_rtpStats_set(ast, &sub->rtp_stats);
++		ast_channel_unlock(ast);
+ 	}
+ 	pvt_unlock(sub->parent);
+ 
+@@ -1207,10 +1224,10 @@ static int brcm_hangup(struct ast_channel *ast)
+ 	pvt_lock(p, "TELCHAN hangup");
+ 	sub_peer = brcm_subchannel_get_peer(sub);
+ 
+-	ast_debug(1, "ast=%s line_id=%d connection_id=%d dialtone=%s channel_state=%s peer_state=%s\n",
++	ast_log(LOG_NOTICE, "brcm_hangup chan=%s line_id=%d connection_id=%d dialtone=%s channel_state=%s peer_state=%s sub_timer: %d, peer_timer: %d\n",
+ 		ast_channel_name(ast), p->line_id, sub->connection_id, dialtone_map[p->dialtone].str,
+-		state2str(sub->channel_state), state2str(sub_peer->channel_state));
+-	/* If call is not connected (INCALL) or is dialing but Subchannel is busy, move to Disconnected state */
++		state2str(sub->channel_state), state2str(sub_peer->channel_state), sub->conf_timer_id, sub_peer->conf_timer_id);
++		/* If call is not connected (INCALL) or is dialing but Subchannel is busy, move to Disconnected state */
+ 	if ((sub->channel_state!= ONHOOK && sub_peer->channel_state != OFFHOOK))
+ 	{
+ 		//Ignore state change if we are INCALL
+@@ -1225,19 +1242,21 @@ static int brcm_hangup(struct ast_channel *ast)
+ 	}
+ 
+ 	if (sub_peer->conf_timer_id != -1) {
+-		conf_timer_removed = 1;
+ 		if (ast_sched_del(sched, sub_peer->conf_timer_id)) {
+ 			ast_log(LOG_WARNING, "Failed to remove scheduled conference setup timer\n");
++		} else {
++			conf_timer_removed = 1;
++			sub_peer->conf_timer_id = -1;
+ 		}
+-		sub_peer->conf_timer_id = -1;
+ 	}
+ 
+ 	if (sub->conf_timer_id != -1){
+-		conf_timer_removed = 1;
+ 		if (ast_sched_del(sched, sub->conf_timer_id)) {
+ 			ast_log(LOG_WARNING, "Failed to remove scheduled conference setup timer\n");
++		} else {
++			conf_timer_removed = 1;
++			sub->conf_timer_id = -1;
+ 		}
+-		sub->conf_timer_id = -1;
+ 	}
+ 
+ 	if (sub->channel_state == CALLWAITING) {
+@@ -1322,9 +1341,11 @@ static int brcm_hangup(struct ast_channel *ast)
+ 			ast_channel_ref(sub_peer->owner);
+ 		peer_owner = sub_peer->owner;
+ 		pvt_unlock(sub_peer->parent);
+-		brcm_unmute_connection(sub_peer);
+-		ast_queue_unhold(peer_owner);
+-		sub_peer->channel_state = INCALL;
++		if (peer_owner) {
++			brcm_unmute_connection(sub_peer);
++			ast_queue_unhold(peer_owner);
++			sub_peer->channel_state = INCALL;
++		}
+ 	}
+ 
+ 	memset(p->ext, 0, sizeof(p->ext));
+@@ -1842,14 +1863,14 @@ static int setup_conference_call_cb( const void *data)
+     /* Setup conference if no dtmf is pressed after flash ,i.e we are not waiting for dtmf now*/
+     if((sub->conf_timer_id != -1) || (sub_peer->conf_timer_id != -1))
+     {
++        sub->conf_timer_id = -1;
++        sub_peer->conf_timer_id = -1;
+         ast_log(LOG_NOTICE,"Valid flags to start a Conference Call\n");
+         brcm_create_conference(p);
+         if (peer_owner) {
+             sub_peer->channel_state = INCALL;
+         }
+          sub->channel_state = INCALL;
+-         sub->conf_timer_id = -1;
+-         sub_peer->conf_timer_id = -1;
+     }
+ 
+     brcm_send_ubus_event("UNHOLD",sub->parent->line_id);
+@@ -2295,10 +2316,14 @@ static void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel
+ 	ast_log(LOG_NOTICE, "Hook Flash detected for phone line %d, p->dtmf_first = %d\r\n", sub->parent->line_id, p->dtmf_first);
+ 
+ 	if (owner) {
++		ast_channel_lock(sub->owner);
+ 		bridge = ast_channel_internal_bridge(owner);
++		ast_channel_unlock(sub->owner);
+ 	}
+ 	else if (peer_owner) {
++		ast_channel_lock(sub->owner);
+ 		bridge = ast_channel_internal_bridge(peer_owner);
++		ast_channel_unlock(sub->owner);
+ 	} else {
+ 		p->hf_detected = 0;
+ 		return;
+@@ -4554,12 +4579,14 @@ static int asterisk_event(struct ubus_context *ctx, struct ubus_object *obj,
+ 	char *event_str;
+ 	struct endpt_event *ev;
+ 	int line;
+-
++	ast_log(LOG_DEBUG, "Event received!\n");
+ 	blobmsg_parse(asterisk_event_policy, __EVENT_MAX,
+ 				  tb, blob_data(msg), blob_len(msg));
+ 
+-	if (!tb[EVENT_LINE_ID] || !tb[EVENT_TYPE])
++	if (!tb[EVENT_LINE_ID] || !tb[EVENT_TYPE]) {
++		ast_log(LOG_DEBUG, "Wrong param: tb[EVENT_LINE_ID]: %d, tb[EVENT_TYPE]: %d\n", tb[EVENT_LINE_ID], tb[EVENT_TYPE]);
+ 		return UBUS_STATUS_INVALID_ARGUMENT;
++	}
+ 
+ 	line = blobmsg_get_u32(tb[EVENT_LINE_ID]);
+ 
+@@ -5028,7 +5055,9 @@ static int brcm_create_conference(struct brcm_pvt *p)
+ 	second = brcm_get_active_subchannel(p);
+ 	if(!second || !second->owner) return -1;
+ 	// Second bridge. Initiator + second remote call.
++	ast_channel_lock(second->owner);
+ 	secondBridge = ast_channel_internal_bridge(second->owner);
++	ast_channel_unlock(second->owner);
+ 	if(!secondBridge) return -1;
+ 
+ 	// First call from initiator (is onhold).
+@@ -5040,7 +5069,9 @@ static int brcm_create_conference(struct brcm_pvt *p)
+ 
+ 	/* First bridge. Initiator + first (active but
+ 	 * waiting in background) remote call. */
++	ast_channel_lock(onhold->owner);
+ 	onholdBridge = ast_channel_internal_bridge(onhold->owner);
++	ast_channel_unlock(onhold->owner);
+ 	if(!onholdBridge) return -1;
+ 
+ 	/* Put second initiator call onhold and unhold the first initiator
+@@ -5061,12 +5092,12 @@ static int brcm_create_conference(struct brcm_pvt *p)
+ 
+ 	// Move second call into first bridge and wait for it to finish.
+ 	chanToKick[0] = second->owner;
+-        
+-        pvt_lock(second->parent, "moving call to first bridge");
++
++	pvt_lock(second->parent, "moving call to first bridge");
+         if(onholdBridge && secondBridge)
+ 	res = ast_bridge_merge(onholdBridge, secondBridge, 0, chanToKick, 1);
+ 	while(ast_bridge_find_by_id(second->conference_id)) sched_yield();
+-        pvt_unlock(second->parent);
++	pvt_unlock(second->parent);
+ 
+         // SIP calls need unhold sent to the bridge as well.
+ 	astFrame.frametype = AST_FRAME_CONTROL;
+diff --git a/chan_pjsip.c b/chan_pjsip.c
+index d8397b3..60ec991 100644
+--- a/channels/chan_pjsip.c
++++ b/channels/chan_pjsip.c
+@@ -2262,7 +2262,13 @@ static int transfer(void *data)
+ 		if (ast_channel_state(trnf_data->session->channel) == AST_STATE_RING) {
+ 			transfer_redirect(trnf_data->session, target);
+ 		} else {
+-			transfer_refer(trnf_data->session, target);
++
++			if (ast_channel_state(trnf_data->session->channel) == AST_STATE_RING) {
++				transfer_redirect(trnf_data->session, target);
++			} else {
++				transfer_refer(trnf_data->session, target);
++			}
++
+ 		}
+ 	}
+ 

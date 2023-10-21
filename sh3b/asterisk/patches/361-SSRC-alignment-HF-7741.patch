@@ -1,0 +1,173 @@
+Index: asterisk-18.5.1/channels/chan_brcm.c
+===================================================================
+--- asterisk-18.5.1.orig/channels/chan_brcm.c
++++ asterisk-18.5.1/channels/chan_brcm.c
+@@ -77,7 +77,7 @@ static int brcm_in_conference(const stru
+ static int cwtimeout_cb(const void *data);
+ static int cwbeep_cb(const void *data);
+ static int r4hanguptimeout_cb(const void *data);
+-static void brcm_generate_rtp_packet(struct brcm_subchannel *p, uint8_t *packet_buf, int type, int seqno, unsigned int rtp_timestamp);
++static void brcm_generate_rtp_packet(struct brcm_subchannel *p, uint8_t *packet_buf, int type, int seqno, unsigned int rtp_timestamp, unsigned int ssrc);
+ static void brcm_process_rtcp_packet(struct brcm_subchannel *p, uint8_t *rtcp_frame, uint32_t rtcp_size);
+ static int brcm_mute_connection(struct brcm_subchannel *p);
+ static int brcm_unmute_connection(struct brcm_subchannel *p);
+@@ -1724,7 +1724,7 @@ static int brcm_write(struct ast_channel
+ 		pvt_lock(sub->parent, "TELCHAN write frame");
+ 
+ 		/* generate the rtp header */
+-		brcm_generate_rtp_packet(sub, ap->rtp, CN, frame->seqno, rtp_timestamp);
++		brcm_generate_rtp_packet(sub, ap->rtp, CN, frame->seqno, rtp_timestamp, frame->ssrc);
+ 
+ 		/* set rtp payload_type sent to endpoint */
+ 		sub->codec = CN;
+@@ -1754,7 +1754,7 @@ static int brcm_write(struct ast_channel
+ 		pvt_lock(sub->parent, "TELCHAN write frame");
+ 
+ 		/* generate the rtp header */
+-		brcm_generate_rtp_packet(sub, ap->rtp, map_ast_codec_id_to_rtp(frame->subclass.format), frame->seqno, rtp_timestamp);
++		brcm_generate_rtp_packet(sub, ap->rtp, map_ast_codec_id_to_rtp(frame->subclass.format), frame->seqno, rtp_timestamp, frame->ssrc);
+ 
+ 		/* set rtp payload_type sent to endpoint */
+ 		sub->codec = map_ast_codec_id_to_rtp(frame->subclass.format);
+@@ -3056,7 +3056,11 @@ static void audio_packet_handler(pe_pack
+ 				frame.samples = ast_codec_samples_count(&frame);
+ 			}
+ 		}
+-		sub->dsp_ssrc = packet_buf32[2]; // save the DSP's SSRC
++
++		// write header values into frame so asterisk uses the same RTP header as DSP
++		frame.seqno = (ntohl(packet_buf32[0]) & 0xffff);
++		frame.ts =  ntohl(packet_buf32[1]);
++		frame.ssrc = ntohl(packet_buf32[2]);
+ 	} else if (rtp_packet_type == BRCM_RTCP_SR || rtp_packet_type == BRCM_RTCP_RR) {
+ 		frame.frametype = AST_FRAME_RTCP;
+ 		frame.data.ptr = ap->rtp;
+@@ -3736,8 +3740,6 @@ static struct brcm_pvt *brcm_allocate_pv
+ 				sub->channel_state = ONHOOK;
+ 				sub->time_stamp = 0;
+ 				sub->sequence_number = 0;
+-				sub->far_end_ssrc = 0;
+-				sub->dsp_ssrc = 0;
+ 				sub->codec = -1;
+ 				sub->parent = tmp;
+ 				sub->cw_timer_id = -1;
+@@ -4003,8 +4005,6 @@ static void brcm_show_subchannels(struct
+ 		ast_cli(a->fd, "  Connection init     : %d\n", sub->connection_init);
+ 		ast_cli(a->fd, "  Codec used          : %s\n", brcm_get_codec_string(sub->codec));
+ 		ast_cli(a->fd, "  RTP sequence number : %d\n", sub->sequence_number);
+-		ast_cli(a->fd, "  RTP Far End SSRC    : %d\n", sub->far_end_ssrc);
+-		ast_cli(a->fd, "  RTP DSP SSRC        : %d\n", sub->dsp_ssrc);
+ 		ast_cli(a->fd, "  RTP timestamp       : %d\n", sub->time_stamp);
+ 		ast_cli(a->fd, "  CW Timer id         : %d\n", sub->cw_timer_id);
+ 		ast_cli(a->fd, "  CW Beep Timer id    : %d\n", sub->cwBeep_timer_id);
+@@ -5299,9 +5299,6 @@ static int brcm_signal_callerid(struct a
+ 
+ static int brcm_create_connection(struct brcm_subchannel *sub) {
+ 	if (!sub->connection_init) {
+-		/* generate random nr for rtp header */
+-		sub->far_end_ssrc = rand();
+-
+ 		ast_debug(1, "Creating virtual Asterisk connection for pvt line_id=%i connection_id=%d\n", sub->parent->line_id, sub->connection_id);
+ 		sub->connection_init = 1;
+ 		sub->jitter_count = 0;
+@@ -5467,7 +5464,7 @@ static int brcm_close_connection(struct
+ 
+ 
+ /* Generate rtp payload, 12 bytes of header and 160 bytes of ulaw payload */
+-static void brcm_generate_rtp_packet(struct brcm_subchannel *sub, uint8_t *packet_buf, int type, int seqno, unsigned int rtp_timestamp) {
++static void brcm_generate_rtp_packet(struct brcm_subchannel *sub, uint8_t *packet_buf, int type, int seqno, unsigned int rtp_timestamp, unsigned int ssrc) {
+ 	unsigned short* packet_buf16 = (unsigned short*)packet_buf;
+ 	unsigned int*   packet_buf32 = (unsigned int*)packet_buf;
+ 
+@@ -5480,7 +5477,7 @@ static void brcm_generate_rtp_packet(str
+ 	packet_buf16[1] = htons(seqno ? seqno : sub->sequence_number++); //Add sequence number
+ 	packet_buf32[1] = htonl(rtp_timestamp ? rtp_timestamp : sub->time_stamp); //Add timestamp
+ 	sub->time_stamp += sub->period*8;
+-	packet_buf32[2] = sub->far_end_ssrc;
++	packet_buf32[2] = htonl(ssrc);
+ }
+ 
+ /*
+@@ -5503,13 +5500,10 @@ static void brcm_process_rtcp_packet(str
+ 			case RTCP_SR:
+ 				p->jitter_count++;
+ 				p->farEndInterrivalJitter += RTCP_SR_GET_INTERARRIVAL_JITTER(rtcp_hdr);
+-				packet_buf32[7] = p->dsp_ssrc;	// replace Source Identifier with dsp's SSRC
+ 				/* Intentional fall through */
+ 			case RTCP_RR:
+ 			case RTCP_SDES:
+ 			case RTCP_XR:
+-				// Replace SSRC with far end  SSRC for all types of RTCP packets above
+-				rtcp_hdr->ssrc = p->far_end_ssrc;
+ 				break;
+ 			default:
+ 				ast_log(LOG_ERROR, "Unknown RTCP packet type:%hhu\n", rtcp_hdr->pt);
+Index: asterisk-18.5.1/channels/chan_brcm.h
+===================================================================
+--- asterisk-18.5.1.orig/channels/chan_brcm.h
++++ asterisk-18.5.1/channels/chan_brcm.h
+@@ -149,8 +149,6 @@ struct brcm_subchannel {
+ 	uint16_t sequence_number;       /* Endpoint RTP sequence number state */
+ 	unsigned int time_stamp;	/* Endpoint RTP time stamp state */
+ 	unsigned int period;		/* Endpoint RTP period */
+-	unsigned int far_end_ssrc;	/* Endpoint RTP synchronization source of far end */
+-	unsigned int dsp_ssrc;		/* Endpoint RTP synchronization source of DUT's DSP */
+ 	int codec;			/* Used codec */
+ 	struct brcm_pvt *parent;	/* brcm_line owning this subchannel */
+ 	int cw_timer_id;		/* Current call waiting timer id, -1 if no active timer */
+Index: asterisk-18.5.1/include/asterisk/frame.h
+===================================================================
+--- asterisk-18.5.1.orig/include/asterisk/frame.h
++++ asterisk-18.5.1/include/asterisk/frame.h
+@@ -191,6 +191,8 @@ struct ast_frame {
+ 	long ts;
+ 	/*! Length in milliseconds */
+ 	long len;
++	/*! SSRC */
++	long ssrc;
+ 	/*! Sequence number */
+ 	int seqno;
+ 	/*! Stream number the frame originated from */
+Index: asterisk-18.5.1/main/frame.c
+===================================================================
+--- asterisk-18.5.1.orig/main/frame.c
++++ asterisk-18.5.1/main/frame.c
+@@ -389,6 +389,7 @@ struct ast_frame *__ast_frdup(const stru
+ 	out->ts = f->ts;
+ 	out->len = f->len;
+ 	out->seqno = f->seqno;
++	out->ssrc = f->ssrc;
+ 	out->stream_num = f->stream_num;
+ 	return out;
+ }
+Index: asterisk-18.5.1/res/res_rtp_asterisk.c
+===================================================================
+--- asterisk-18.5.1.orig/res/res_rtp_asterisk.c
++++ asterisk-18.5.1/res/res_rtp_asterisk.c
+@@ -5039,8 +5039,16 @@ static int rtp_raw_write(struct ast_rtp_
+ 		packet_len = frame->datalen + hdrlen;
+ 		rtpheader = (unsigned char *)(frame->data.ptr - hdrlen);
+ 
+-		put_unaligned_uint32(rtpheader, htonl((2 << 30) | (ext << 28) | (codec << 16) | (seqno) | (mark << 23)));
+-		put_unaligned_uint32(rtpheader + 4, htonl(rtp->lastts));
++		if (frame->ssrc && frame->ssrc != rtp->ssrc) {
++			struct ast_srtp *srtp = ast_rtp_instance_get_srtp(instance, 0);
++			if (srtp) {
++				res_srtp->change_source(srtp, rtp->ssrc, frame->ssrc);
++			}
++			rtp->ssrc = frame->ssrc;
++		}
++
++		put_unaligned_uint32(rtpheader, htonl((2 << 30) | (ext << 28) | (codec << 16) | (frame->seqno ? frame->seqno : seqno) | (mark << 23)));
++		put_unaligned_uint32(rtpheader + 4, htonl(frame->ts ? frame->ts : rtp->lastts));
+ 		put_unaligned_uint32(rtpheader + 8, htonl(rtp->ssrc));
+ 
+ 		/* We assume right now that we will only ever have the abs-send-time extension in the packet
+@@ -7467,6 +7475,7 @@ static struct ast_frame *ast_rtp_interpr
+ 	rtp->f.offset = hdrlen + AST_FRIENDLY_OFFSET;
+ 	ast_set_flag(&rtp->f, AST_FRFLAG_HAS_SEQUENCE_NUMBER);
+ 	rtp->f.seqno = seqno;
++	rtp->f.ssrc = ssrc;
+ 	rtp->f.stream_num = rtp->stream_num;
+ 
+ 	if ((ast_format_cmp(rtp->f.subclass.format, ast_format_t140) == AST_FORMAT_CMP_EQUAL)

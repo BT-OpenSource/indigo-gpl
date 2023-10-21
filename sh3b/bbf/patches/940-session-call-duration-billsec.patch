@@ -1,0 +1,56 @@
+--- a/dmtree/tr104/common.c
++++ b/dmtree/tr104/common.c
+@@ -288,8 +293,17 @@ int init_call_log(void)
+ 			end = DM_LSTRSTR(token, "\",");
+ 			CHECK_RESULT(end);
+ 			DM_STRNCPY(end_time, token, end - token + 1);
++
++			// bill seconds
++			token = DM_LSTRSTR(end + 2, ",");
++			CHECK_RESULT(token);
++			token += 1;
++			end = DM_LSTRSTR(token, ",\"");
++			CHECK_RESULT(end);
++			DM_STRNCPY(cdr.bill_sec, token, end - token + 1);
++
+ 			// termination cause
+-			token = DM_LSTRSTR(end + 2, ",\""); // ANSWERED in the last example
++			token = DM_LSTRSTR(token, ",\""); // ANSWERED in the last example
+ 			CHECK_RESULT(token);
+ 			token += 2;
+ 			end = DM_LSTRSTR(token, "\",");
+--- a/dmtree/tr104/common.h
++++ b/dmtree/tr104/common.h
+@@ -30,6 +30,7 @@ struct call_log_entry {
+ 	char direction[16];
+ 	char start_time[32];
+ 	char duration[8];
++	char bill_sec[8];
+ 	char termination_cause[32];
+ 	char sessionId[20];
+ 	char SIPSessionId[33];
+--- a/dmtree/tr104/servicesvoiceservicecalllog.c
++++ b/dmtree/tr104/servicesvoiceservicecalllog.c
+@@ -120,6 +120,13 @@ static int get_ServicesVoiceServiceCallL
+ 	return 0;
+ }
+ 
++static int get_ServicesVoiceServiceCallLog_BillSec(char *refparam, struct dmctx *ctx, void *data, char *instance, char **value)
++{
++	struct call_log_entry *entry = (struct call_log_entry *)data;
++	*value = (entry) ? dmstrdup(entry->bill_sec) : "0";
++	return 0;
++}
++
+ static int get_ServicesVoiceServiceCallLog_SessionId(char *refparam, struct dmctx *ctx, void *data, char *instance, char **value)
+ {
+ 	struct call_log_entry *entry = (struct call_log_entry *)data;
+@@ -272,7 +279,7 @@ DMOBJ tServicesVoiceServiceCallLogSessio
+ 
+ DMLEAF tServicesVoiceServiceCallLogSessionParams[] = {
+ /* PARAM, permission, type, getvalue, setvalue, bbfdm_type*/
+-{"Duration", &DMREAD, DMT_UNINT, get_ServicesVoiceServiceCallLog_Duration, NULL, BBFDM_BOTH},
++{"Duration", &DMREAD, DMT_UNINT, get_ServicesVoiceServiceCallLog_BillSec, NULL, BBFDM_BOTH},
+ {"Start", &DMREAD, DMT_TIME, get_ServicesVoiceServiceCallLog_Start, NULL, BBFDM_BOTH},
+ {"SessionID", &DMREAD, DMT_STRING, get_ServicesVoiceServiceCallLog_SessionId, NULL, BBFDM_BOTH},
+ {"SIPSessionID", &DMREAD, DMT_STRING, get_ServicesVoiceServiceCallLog_SIPSessionId, NULL, BBFDM_BOTH},

@@ -1,0 +1,97 @@
+diff --git a/device.c b/device.c
+index b2c2883..0c8cfce 100644
+--- a/device.c
++++ b/device.c
+@@ -53,6 +53,7 @@ static const struct blobmsg_policy dev_attrs[__DEV_ATTR_MAX] = {
+ 	[DEV_ATTR_MULTICAST] = { .name ="multicast", .type = BLOBMSG_TYPE_BOOL },
+ 	[DEV_ATTR_LEARNING] = { .name ="learning", .type = BLOBMSG_TYPE_BOOL },
+ 	[DEV_ATTR_UNICAST_FLOOD] = { .name ="unicast_flood", .type = BLOBMSG_TYPE_BOOL },
++	[DEV_ATTR_PORT_PRIORITY] = { .name ="port_priority", .type = BLOBMSG_TYPE_INT32 },
+ 	[DEV_ATTR_SENDREDIRECTS] = { .name = "sendredirects", .type = BLOBMSG_TYPE_BOOL },
+ 	[DEV_ATTR_NEIGHLOCKTIME] = { .name = "neighlocktime", .type = BLOBMSG_TYPE_INT32 },
+ 	[DEV_ATTR_ISOLATE] = { .name = "isolate", .type = BLOBMSG_TYPE_BOOL },
+@@ -266,6 +267,7 @@ device_merge_settings(struct device *dev, struct device_settings *n)
+ 	n->multicast_fast_leave = s->multicast_fast_leave;
+ 	n->learning = s->learning;
+ 	n->unicast_flood = s->unicast_flood;
++	n->port_priority = s->port_priority;
+ 	n->sendredirects = s->flags & DEV_OPT_SENDREDIRECTS ?
+ 		s->sendredirects : os->sendredirects;
+ 	n->drop_v4_unicast_in_l2_multicast = s->flags & DEV_OPT_DROP_V4_UNICAST_IN_L2_MULTICAST ?
+@@ -415,6 +417,11 @@ device_init_settings(struct device *dev, struct blob_attr **tb)
+ 		s->flags |= DEV_OPT_UNICAST_FLOOD;
+ 	}
+ 
++	if ((cur = tb[DEV_ATTR_PORT_PRIORITY])) {
++		s->port_priority = blobmsg_get_u32(cur);
++		s->flags |= DEV_OPT_PORT_PRIORITY;
++	}
++
+ 	if ((cur = tb[DEV_ATTR_SENDREDIRECTS])) {
+ 		s->sendredirects = blobmsg_get_bool(cur);
+ 		s->flags |= DEV_OPT_SENDREDIRECTS;
+@@ -1205,6 +1212,8 @@ device_dump_status(struct blob_buf *b, struct device *dev)
+ 			blobmsg_add_u8(b, "learning", st.learning);
+ 		if (st.flags & DEV_OPT_UNICAST_FLOOD)
+ 			blobmsg_add_u8(b, "unicast_flood", st.unicast_flood);
++		if (st.flags & DEV_OPT_PORT_PRIORITY)
++			blobmsg_add_u32(b, "port_priority", st.port_priority);
+ 		if (st.flags & DEV_OPT_SENDREDIRECTS)
+ 			blobmsg_add_u8(b, "sendredirects", st.sendredirects);
+ 		if (st.flags & DEV_OPT_DROP_V4_UNICAST_IN_L2_MULTICAST)
+diff --git a/device.h b/device.h
+index 37f8c37..59dbe16 100644
+--- a/device.h
++++ b/device.h
+@@ -49,6 +49,7 @@ enum {
+ 	DEV_ATTR_MULTICAST,
+ 	DEV_ATTR_LEARNING,
+ 	DEV_ATTR_UNICAST_FLOOD,
++	DEV_ATTR_PORT_PRIORITY,
+ 	DEV_ATTR_NEIGHGCSTALETIME,
+ 	DEV_ATTR_SENDREDIRECTS,
+ 	DEV_ATTR_NEIGHLOCKTIME,
+@@ -126,6 +127,7 @@ enum {
+ 	DEV_OPT_ARP_ACCEPT		= (1ULL << 29),
+ 	DEV_OPT_SPEED			= (1ULL << 30),
+ 	DEV_OPT_DUPLEX			= (1ULL << 31),
++	DEV_OPT_PORT_PRIORITY		= (1ULL << 32),
+ };
+ 
+ /* events broadcasted to all users of a device */
+@@ -192,6 +194,7 @@ struct device_settings {
+ 	bool multicast;
+ 	bool learning;
+ 	bool unicast_flood;
++	unsigned int port_priority;
+ 	bool sendredirects;
+ 	bool ip6segmentrouting;
+ 	bool isolate;
+diff --git a/system-linux.c b/system-linux.c
+index a0cc382..f3d381e 100644
+--- a/system-linux.c
++++ b/system-linux.c
+@@ -595,6 +595,11 @@ static void system_bridge_set_unicast_flood(struct device *dev, const char *val)
+ 	system_set_dev_sysfs("brport/unicast_flood", dev->ifname, val);
+ }
+ 
++static void system_bridge_set_port_priority(struct device *dev, const char *val)
++{
++	system_set_dev_sysfs("brport/priority", dev->ifname, val);
++}
++
+ static void system_bridge_set_vlan_filtering(struct device *dev, const char *val)
+ {
+ 	system_set_dev_sysfs("bridge/vlan_filtering", dev->ifname, val);
+@@ -952,6 +957,11 @@ retry:
+ 	    !dev->settings.unicast_flood)
+ 		system_bridge_set_unicast_flood(dev, "0");
+ 
++	if (dev->settings.flags & DEV_OPT_PORT_PRIORITY) {
++		snprintf(buf, sizeof(buf), "%d", dev->settings.port_priority);
++		system_bridge_set_port_priority(dev, buf);
++	}
++
+ 	if (dev->settings.flags & DEV_OPT_ISOLATE &&
+ 	    dev->settings.isolate)
+ 		system_bridge_set_isolated(dev, "1");

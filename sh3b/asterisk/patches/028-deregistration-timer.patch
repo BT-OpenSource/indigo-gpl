@@ -1,0 +1,361 @@
+--- a/res/res_pjsip_outbound_registration.c
++++ b/res/res_pjsip_outbound_registration.c
+@@ -247,10 +247,6 @@
+ 	</manager>
+  ***/
+ 
+-/* forward declarations */
+-static int set_outbound_initial_authentication_credentials(pjsip_regc *regc,
+-		const struct ast_sip_auth_vector *auth_vector);
+-
+ /*! \brief Some thread local storage used to determine if the running thread invoked the callback */
+ AST_THREADSTORAGE(register_callback_invoked);
+ 
+@@ -303,6 +299,18 @@
+ 	}
+ 	return str;
+ }
++
++/*! State of moving to a different P-CSCF */
++enum p_cscf_transition_state {
++	/*!< No transition required */
++	P_CSCF_TRANSITION_NONE = 0,
++	/*!< Unregister from current P-CSCF */
++	P_CSCF_TRANSITION_UNREGISTER,
++	/*!< Register with new P-CSCF */
++	P_CSCF_TRANSITION_REGISTER,
++	/*!< Delay the transition until call has completed */
++	P_CSCF_TRANSITION_DELAYED
++};
+ 
+ /*! \brief Outbound registration information */
+ struct sip_outbound_registration {
+@@ -347,6 +355,8 @@
+ 	unsigned int mediasec;
+ 	/*! \brief Whether Outbound support is enabled */
+ 	unsigned int support_outbound;
++	/*! \brief Timer to indicate when we should attempt to move P-CSCF */
++	unsigned int deregistration_timer;
+ };
+ 
+ /*! \brief Outbound registration client state information (persists for lifetime of regc) */
+@@ -410,6 +420,8 @@
+ 	unsigned int last_successful_registration;
+ 	/*! \brief Request for which the response was received with authorization header */
+ 	pjsip_tx_data *last_request;
++	/*! \brief State of transition to a different P-CSCF */
++	enum p_cscf_transition_state p_cscf_state;
+ };
+ 
+ /*! \brief Outbound registration state information (persists for lifetime that registration should exist) */
+@@ -420,6 +432,12 @@
+ 	struct sip_outbound_registration_client_state *client_state;
+ };
+ 
++/* forward declarations */
++static int set_outbound_initial_authentication_credentials(pjsip_regc *regc,
++		const struct ast_sip_auth_vector *auth_vector);
++
++static int handle_client_deregistration(struct sip_outbound_registration_client_state *client_state);
++
+ /*! Time needs to be long enough for a transaction to timeout if nothing replies. */
+ #define MAX_UNLOAD_TIMEOUT_TIME		35	/* Seconds */
+ 
+@@ -432,6 +450,15 @@
+ 
+ /*! subscription id for network change events */
+ static struct stasis_subscription *network_change_sub;
++
++/*! subscription id for device state events */
++static struct stasis_subscription *device_state_sub;
++
++/*! device state */
++static enum ast_device_state device_state = AST_DEVICE_UNKNOWN;
++
++/*! Absolute time when the deregistration timer will expire */
++static int deregistration_expiry = 0;
+ 
+ /*! DNS cache function pointers */
+ dns_cache_update_addr_t update_dns_cache_addr = NULL;
+@@ -742,20 +769,133 @@
+ 	}
+ }
+ 
++/*! \brief Set the deregistration timer */
++static void set_deregistration_timer(unsigned int timeout)
++{
++	ast_debug(1, "Setting Deregistration timer to expire in %u seconds\n", timeout);
++	deregistration_expiry = time(NULL) + timeout;
++}
++
++/*! \brief Check to see if the deregistration timer has expired */
++static int deregistration_timer_expired(void)
++{
++	return ((deregistration_expiry < time(NULL)) ? 1 : 0);
++}
++
++/*! \brief Use device state to return if there is a call in progress */
++static int call_in_progress(void)
++{
++	return ((device_state >= AST_DEVICE_INUSE) ? 1 : 0);
++}
++
++/*! \brief ao2 callback function to start the transition to a different P-CSCF */
++static int start_p_cscf_transition(void *obj, void *arg, int flags)
++{
++	struct sip_outbound_registration_state *state = obj;
++	int *start_delayed = arg;
++
++	if (!(*start_delayed) ||
++	    (*start_delayed && state->client_state->p_cscf_state == P_CSCF_TRANSITION_DELAYED)) {
++		ast_log(LOG_DEBUG, "Starting %stransition to new P-CSCF\n", (*start_delayed) ? "delayed " : "");
++		report_registration_info(state->client_state->status, "P-CSCF transition: Start");
++
++		set_deregistration_timer(state->registration->deregistration_timer);
++		handle_client_deregistration(state->client_state);
++		state->client_state->p_cscf_state = P_CSCF_TRANSITION_UNREGISTER;
++	}
++	return 0;
++}
++
++/*! \brief ao2 callback function to delay the transition to a different P-CSCF */
++static int delay_p_cscf_transition(void *obj, void *arg, int flags)
++{
++	struct sip_outbound_registration_state *state = obj;
++	state->client_state->p_cscf_state = P_CSCF_TRANSITION_DELAYED;
++	report_registration_info(state->client_state->status, "P-CSCF transition: Delayed");
++	return 0;
++}
++
++/*! \brief Callback function to process device state stasis messages */
++static void device_state_stasis_cb(void *data, struct stasis_subscription *sub, struct stasis_message *msg)
++{
++	struct ast_device_state_message *dev_state_msg;
++
++	if (ast_device_state_message_type() != stasis_message_type(msg)) {
++		/* Only interested in device state messages */
++		return;
++	}
++
++	dev_state_msg = stasis_message_data(msg);
++
++	if (dev_state_msg->eid || strncmp(dev_state_msg->device, "PJSIP", 5)) {
++		ast_debug(1, "Ignoring device state change.(%s: %s). Current: %s\n", dev_state_msg->device, ast_devstate_str(dev_state_msg->state), ast_devstate_str(device_state));
++		return;
++	}
++
++	/* Update global state */
++	device_state = dev_state_msg->state;
++
++	ast_debug(2, "Updating device state (%s: %s)\n",
++			dev_state_msg->device, ast_devstate_str(dev_state_msg->state));
++
++	if (!call_in_progress()) {
++		RAII_VAR(struct ao2_container *, states, NULL, ao2_cleanup);
++		int delayed = 1;
++
++		ast_log(LOG_DEBUG, "Checking for delayed P-CSCF transition\n");
++
++		states = ao2_global_obj_ref(current_states);
++		if (states) {
++			ao2_callback(states, OBJ_NODATA, start_p_cscf_transition, &delayed);
++		}
++	}
++}
++
+ /*! \brief Callback function for registering */
+ static int handle_client_registration(void *data)
+ {
+ 	RAII_VAR(struct sip_outbound_registration_client_state *, client_state, data, ao2_cleanup);
+ 	pjsip_tx_data *tdata;
++
++	if (client_state->status == SIP_REGISTRATION_STOPPED) {
++		return 0;
++	}
++
++	if (client_state->status == SIP_REGISTRATION_REGISTERED &&
++			deregistration_timer_expired() && clear_dns_cache != NULL) {
++		/*
++		 * Need to update the P-CSCF we are registered with. This will impact every client
++		 * and therefore they all need to transition at the same time.
++		 */
++		RAII_VAR(struct ao2_container *, states, NULL, ao2_cleanup);
++		states = ao2_global_obj_ref(current_states);
++
++		if (!states) {
++			/* Should never happen as we have an active client_state */
++			ast_log(LOG_ERROR, "Registration states not found\n");
++			return -1;
++		}
++
++		if (!call_in_progress()) {
++			int delayed = 0;
++
++			ao2_callback(states, OBJ_NODATA, start_p_cscf_transition, &delayed);
++			return 0;
++		}
++
++		/* Call in progress, move P-CSCF after the call finishes */
++		ast_log(LOG_DEBUG, "Transition to new P-CSCF required but blocked by active call\n");
++		ao2_callback(states, OBJ_NODATA, delay_p_cscf_transition, NULL);
++	}
+ 
+ 	if (set_outbound_initial_authentication_credentials(client_state->client, &client_state->outbound_auths)) {
+ 		ast_log(LOG_WARNING, "Failed to set initial authentication credentials\n");
+ 		return -1;
+ 	}
+ 
+-	if (client_state->status == SIP_REGISTRATION_STOPPED
+-		|| pjsip_regc_register(client_state->client, PJ_FALSE, &tdata) != PJ_SUCCESS) {
+-		return 0;
++	if (pjsip_regc_register(client_state->client, PJ_FALSE, &tdata) != PJ_SUCCESS) {
++		ast_log(LOG_WARNING, "Failed to create register message\n");
++		return -1;
+ 	}
+ 
+ 	if (DEBUG_ATLEAST(1)) {
+@@ -785,8 +915,19 @@
+ 	return 0;
+ }
+ 
++/*! \brief Find registration state based on client state */
++static int client_state_compare(void *obj, void *arg, int flags)
++{
++	struct sip_outbound_registration_state *state = obj;
++	struct sip_outbound_registration_client_state *client_state = arg;
++
++	return (state->client_state == client_state) ? CMP_MATCH : 0;
++}
++
+ static int handle_client_deregistration(struct sip_outbound_registration_client_state *client_state)
+ {
++	RAII_VAR(struct ao2_container *, states, NULL, ao2_cleanup);
++	RAII_VAR(struct sip_outbound_registration_state *, registration_state, NULL, ao2_cleanup);
+ 	pjsip_tx_data *tdata;
+ 
+ 	if (client_state->status == SIP_REGISTRATION_STOPPED
+@@ -828,6 +979,33 @@
+ 	 */
+ 	clear_endpoint_security_mechanisms(client_state);
+ 	ast_sip_auth_vector_destroy(&client_state->outbound_auths);
++
++	/*
++	 * Clear the auth data as we may reuse the client_state. Ignore any errors in finding
++	 * the correct state as this indicates we won't reuse the client_state and therefore
++	 * is not an issue.
++	 */
++	states = ao2_global_obj_ref(current_states);
++	if (!states) {
++		ast_debug(1, "Unable to get registration states\n");
++		return 0;
++	}
++
++	registration_state = ao2_callback(states, 0, client_state_compare, (void *)client_state);
++
++	if (!registration_state) {
++		ast_debug(1, "No registration data found\n");
++		return 0;
++	}
++
++	AST_VECTOR_INIT(&client_state->outbound_auths, AST_VECTOR_SIZE(&registration_state->registration->outbound_auths));
++	for (int i = 0; i < AST_VECTOR_SIZE(&registration_state->registration->outbound_auths); ++i) {
++		char *name = ast_strdup(AST_VECTOR_GET(&registration_state->registration->outbound_auths, i));
++
++		if (name && AST_VECTOR_APPEND(&client_state->outbound_auths, name)) {
++			ast_free(name);
++		}
++	}
+ 	return 0;
+ }
+ 
+@@ -1302,7 +1480,7 @@
+ 		}
+ 	}
+ 
+-	if (response->code == 408 || response->code == 503) {
++	if (response->code == 408 || response->code == 503 || response->code == 504) {
+ 		if ((ast_sip_failover_request(response->old_request))) {
+ 			int res = registration_client_send(response->client_state, response->old_request);
+ 			/* The tdata ref was stolen */
+@@ -1311,6 +1489,9 @@
+ 				ao2_ref(response, -1);
+ 				return 0;
+ 			}
++		}
++		if (update_dns_cache_addr != NULL) {
++			(*update_dns_cache_addr)();
+ 		}
+ 	} else if ((response->code == 401 || response->code == 407)
+ 		&& (!response->client_state->auth_attempted
+@@ -1381,6 +1562,13 @@
+ 			/* See if we should monitor for transport shutdown */
+ 			registration_transport_monitor_setup(response->rdata->tp_info.transport,
+ 				response->client_state->registration_name);
++
++			if (response->client_state->p_cscf_state == P_CSCF_TRANSITION_REGISTER) {
++				/* Register part of transition to a new P-CSCF */
++				ast_log(LOG_DEBUG, "P-CSCF transition complete\n");
++				report_registration_info(response->client_state->status, "P-CSCF transition: Complete");
++				response->client_state->p_cscf_state = P_CSCF_TRANSITION_NONE;
++			}
+ 		} else {
+ 			ast_debug(1, "Outbound unregistration to '%s' with client '%s' successful\n", server_uri, client_uri);
+ 			update_client_state_status(response->client_state, SIP_REGISTRATION_UNREGISTERED);
+@@ -1390,6 +1578,19 @@
+ 			ast_sip_transport_monitor_unregister(response->rdata->tp_info.transport,
+ 				registration_transport_shutdown_cb, response->client_state->registration_name,
+ 				monitor_matcher);
++
++			if (response->client_state->p_cscf_state == P_CSCF_TRANSITION_UNREGISTER) {
++				/* Unregister caused by the need to transition to a new P-CSCF */
++				if (clear_dns_cache != NULL) {
++					(*clear_dns_cache)();
++				}
++				ast_log(LOG_DEBUG, "Registering again due to P-CSCF transition\n");
++				report_registration_info(response->client_state->status, "P-CSCF transition: Reregister");
++
++				ao2_ref(response->client_state, +1);
++				handle_client_registration(response->client_state);
++				response->client_state->p_cscf_state = P_CSCF_TRANSITION_REGISTER;
++			}
+ 		}
+ 
+ 		save_response_fields_to_transport(response);
+@@ -1647,6 +1848,10 @@
+ 
+ 	state->registration = ao2_bump(registration);
+ 	state->client_state->last_successful_registration = 0;
++
++	set_deregistration_timer(state->registration->deregistration_timer);
++	state->client_state->p_cscf_state = P_CSCF_TRANSITION_NONE;
++
+ 	return state;
+ }
+ 
+@@ -2866,6 +3071,7 @@
+ 	int remaining;
+ 
+ 	network_change_sub = stasis_unsubscribe_and_join(network_change_sub);
++	device_state_sub = stasis_unsubscribe_and_join(device_state_sub);
+ 
+ 	ast_manager_unregister("PJSIPShowRegistrationsOutbound");
+ 	ast_manager_unregister("PJSIPUnregister");
+@@ -2958,6 +3164,7 @@
+ 	ast_sorcery_object_field_register(ast_sip_get_sorcery(), "registration", "line", "no", OPT_BOOL_T, 1, FLDSET(struct sip_outbound_registration, line));
+ 	ast_sorcery_object_field_register(ast_sip_get_sorcery(), "registration", "endpoint", "", OPT_STRINGFIELD_T, 0, STRFLDSET(struct sip_outbound_registration, endpoint));
+ 	ast_sorcery_object_field_register(ast_sip_get_sorcery(), "registration", "mediasec", "no", OPT_BOOL_T, 1, FLDSET(struct sip_outbound_registration, mediasec));
++	ast_sorcery_object_field_register(ast_sip_get_sorcery(), "registration", "deregistration_timer", "43200", OPT_UINT_T, 0, FLDSET(struct sip_outbound_registration, deregistration_timer));
+ 
+ 	/*
+ 	 * Register sorcery observers.
+@@ -3012,6 +3219,10 @@
+ 	stasis_subscription_accept_message_type(network_change_sub, ast_network_change_type());
+ 	stasis_subscription_set_filter(network_change_sub, STASIS_SUBSCRIPTION_FILTER_SELECTIVE);
+ 
++	device_state_sub = stasis_subscribe(ast_device_state_topic_all(), device_state_stasis_cb, NULL);
++	stasis_subscription_accept_message_type(device_state_sub, ast_device_state_message_type());
++	stasis_subscription_set_filter(network_change_sub, STASIS_SUBSCRIPTION_FILTER_SELECTIVE);
++
+ 	return AST_MODULE_LOAD_SUCCESS;
+ }
+ 

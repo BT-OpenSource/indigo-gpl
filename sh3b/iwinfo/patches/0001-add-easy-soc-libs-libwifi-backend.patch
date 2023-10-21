@@ -1,0 +1,58 @@
+From c1e2772aee6e9373c8642bfb77d03d921fe64b8b Mon Sep 17 00:00:00 2001
+From: Anjan Chanda <anjan.chanda@iopsys.eu>
+Date: Wed, 12 May 2021 12:11:38 +0200
+Subject: [PATCH] add easy-soc-libs libwifi backend
+
+---
+ Makefile         | 7 +++++++
+ include/iwinfo.h | 1 +
+ iwinfo_lib.c     | 3 +++
+ 3 files changed, 11 insertions(+)
+
+diff --git a/Makefile b/Makefile
+index 57b6a09..2e843a3 100644
+--- a/Makefile
++++ b/Makefile
+@@ -34,6 +34,13 @@ ifneq ($(filter nl80211,$(IWINFO_BACKENDS)),)
+ 	IWINFO_LIB_OBJ     += iwinfo_nl80211.o
+ endif
+ 
++ifneq ($(filter esl,$(IWINFO_BACKENDS)),)
++	IWINFO_CFLAGS  += -DUSE_ESL
++	IWINFO_CLI_LDFLAGS += -lnl-genl-3 -lnl-3 -leasy -lwifi-6
++	IWINFO_LIB_LDFLAGS += -lnl-genl-3 -lnl-3 -leasy -lwifi-6
++	IWINFO_LIB_OBJ += iwinfo_esl.o
++endif
++
+ 
+ compile: clean $(IWINFO_LIB) $(IWINFO_LUA) $(IWINFO_CLI)
+ 
+diff --git a/include/iwinfo.h b/include/iwinfo.h
+index 3fc414b..7bd1e3a 100644
+--- a/include/iwinfo.h
++++ b/include/iwinfo.h
+@@ -305,6 +305,7 @@ extern const struct iwinfo_ops wext_ops;
+ extern const struct iwinfo_ops madwifi_ops;
+ extern const struct iwinfo_ops nl80211_ops;
+ extern const struct iwinfo_ops wl_ops;
++extern const struct iwinfo_ops esl_ops;
+ 
+ #include "iwinfo/utils.h"
+ 
+diff --git a/iwinfo_lib.c b/iwinfo_lib.c
+index 70b080c..bbf0794 100644
+--- a/iwinfo_lib.c
++++ b/iwinfo_lib.c
+@@ -338,6 +338,9 @@ static const struct iwinfo_ops *backends[] = {
+ #endif
+ #ifdef USE_WL
+ 	&wl_ops,
++#endif
++#ifdef USE_ESL
++	&esl_ops,
+ #endif
+ 	&wext_ops,
+ };
+-- 
+2.25.1
+

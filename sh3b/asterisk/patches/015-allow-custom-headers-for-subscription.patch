@@ -1,0 +1,46 @@
+--- a/res/res_pjsip_pubsub.c
++++ b/res/res_pjsip_pubsub.c
+@@ -250,7 +250,7 @@
+ #define DATASTORE_BUCKETS 53
+ 
+ /*! \brief Default expiration for subscriptions */
+-#define DEFAULT_EXPIRES 3600
++#define DEFAULT_EXPIRES 60000
+ 
+ /*! \brief Defined method for PUBLISH */
+ const pjsip_method pjsip_publish_method =
+@@ -1866,7 +1866,7 @@
+ 
+ /* XXX This function is not used. */
+ struct ast_sip_subscription *ast_sip_create_subscription(const struct ast_sip_subscription_handler *handler,
+-		struct ast_sip_endpoint *endpoint, const char *resource)
++		struct ast_sip_endpoint *endpoint, const char *resource, pjsip_hdr *hdr_list)
+ {
+ 	struct ast_sip_subscription *sub;
+ 	pjsip_dialog *dlg;
+@@ -1911,6 +1911,10 @@
+ 
+ 	evsub = sub_tree->evsub;
+ 
++	if (hdr_list) {
++		pjsip_evsub_add_header(evsub, hdr_list);
++	}
++
+ 	if (pjsip_evsub_initiate(evsub, NULL, -1, &tdata) == PJ_SUCCESS) {
+ 		pjsip_evsub_send_request(sub_tree->evsub, tdata);
+ 	} else {
+
+--- a/include/asterisk/res_pjsip_pubsub.h
++++ b/include/asterisk/res_pjsip_pubsub.h
+@@ -349,9 +349,10 @@
+  * \param subscriber The subscriber that is making the request.
+  * \param endpoint The endpoint to whome the SUBSCRIBE will be sent.
+  * \param resource The resource to place in the SUBSCRIBE's Request-URI.
++ * \param hdr_list List of custom SIP headers to send in SUBSCRIBE request.
+  */
+ struct ast_sip_subscription *ast_sip_create_subscription(const struct ast_sip_subscription_handler *handler,
+-		struct ast_sip_endpoint *endpoint, const char *resource);
++		struct ast_sip_endpoint *endpoint, const char *resource, pjsip_hdr *hdr_list);
+ 
+ /*!
+  * \brief Get the pjsip dialog that is associated with this subscription

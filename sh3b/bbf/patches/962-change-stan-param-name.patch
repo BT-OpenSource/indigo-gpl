@@ -1,0 +1,13 @@
+diff --git a/dmtree/tr181/wifi.c b/dmtree/tr181/wifi.c
+index c22a948..ea41bd6 100644
+--- a/dmtree/tr181/wifi.c
++++ b/dmtree/tr181/wifi.c
+@@ -4785,7 +4785,7 @@ static int set_WiFiDataElementsNetworkDeviceRadioBSS_BackhaulAKMsAllowed(char *r
+ /*#Device.WiFi.DataElements.Network.Device.{i}.Radio.{i}.BSS.{i}.STANumberOfEntries!UBUS:wifi.dataelements.collector/dump//data[0].wfa-dataelements:Network.DeviceList[@i-1].RadioList[@i-1].BSSList[@i-1].NumberofSTA*/
+ static int get_WiFiDataElementsNetworkDeviceRadioBSS_STANumberOfEntries(char *refparam, struct dmctx *ctx, void *data, char *instance, char **value)
+ {
+-	*value = dmjson_get_value((json_object *)data, 1, "NumberofSTA");
++	*value = dmjson_get_value((json_object *)data, 1, "STANumberOfEntries");
+ 	return 0;
+ }
+ 

@@ -1,0 +1,18 @@
+diff --git a/scripts/netifd-wireless.sh b/scripts/netifd-wireless.sh
+index c0abe74..22415c9 100644
+--- a/scripts/netifd-wireless.sh
++++ b/scripts/netifd-wireless.sh
+@@ -288,6 +288,13 @@ wireless_vif_parse_encryption() {
+ 			auth_osen=1
+ 		;;
+ 	esac
++
++	# override to allow TKIP in WPAPSK
++	case "$encryption" in
++			psk-mixed|psk-mixed+aes) wpa_cipher="CCMP TKIP";;
++			psk|psk+aes) wpa_cipher="TKIP";;
++	esac
++	wpa_pairwise="$wpa_cipher"
+ }
+ 
+ _wireless_set_brsnoop_isolation() {
