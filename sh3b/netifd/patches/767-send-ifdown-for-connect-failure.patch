@@ -1,0 +1,35 @@
+diff --git a/interface.c b/interface.c
+index f3c4273..c695047 100644
+--- a/interface.c
++++ b/interface.c
+@@ -806,13 +806,6 @@ static void
+ interface_proto_event_cb(struct interface_proto_state *state, enum interface_proto_event ev)
+ {
+ 	struct interface *iface = state->iface;
+-	const char *name = "wan_ok";
+-	struct interface_data *o = NULL;
+-	bool wstate = false;
+-
+-        if ((o = avl_find_element(&iface->data, name, o, node)) != NULL) {
+-                wstate = true;
+-        }
+ 
+ 	switch (ev) {
+ 	case IFPEV_UP:
+@@ -834,15 +827,8 @@ interface_proto_event_cb(struct interface_proto_state *state, enum interface_pro
+ 		netifd_log_message(L_NOTICE, "Interface '%s' is now up\n", iface->name);
+ 		break;
+ 	case IFPEV_DOWN:
+-		/* If in wan monitor mode then send ifdown anyway */
+-		if (iface->state == IFS_DOWN && !wstate) {
+-			return;
+-		} else if (wstate) {
+-			netifd_log_message(L_NOTICE, "In WAN monitor mode \n");
+-			interface_event(iface, IFEV_DOWN);
+-		}
+-
+ 		netifd_log_message(L_NOTICE, "Interface '%s' is now down\n", iface->name);
++		interface_event(iface, IFEV_DOWN);
+ 		mark_interface_down(iface);
+ 		if (iface->main_dev.dev)
+ 			device_release(&iface->main_dev);

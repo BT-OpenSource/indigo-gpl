@@ -1,0 +1,158 @@
+--- a/channels/chan_brcm.c
++++ b/channels/chan_brcm.c
+@@ -205,6 +205,8 @@
+ #define RTP_HEADER_SIZE 12
+ #define RTP_DTMF_SIZE 4
+ 
++static bool internet_connection = false;
++
+ enum {
+ 	EVENT_TYPE,
+ 	EVENT_LINE_ID,
+@@ -232,6 +234,19 @@
+ 	enum LINE_EVENT event;
+ 	int line;
+ };
++
++enum {
++	INTERNET_STATUS,
++	__TESTNET_ARR_MAX,
++};
++
++static const struct blobmsg_policy testnet_policy[] = {
++	[INTERNET_STATUS] = {
++		.name = "online",
++		.type = BLOBMSG_TYPE_BOOL
++	},
++};
++
+ 
+ typedef struct __attribute__((__packed__)) {
+ 	int32_t line;
+@@ -2340,6 +2355,61 @@
+ 		return 0;
+ }
+ 
++static void brcm_play_announcement(struct brcm_pvt *p, const char *announce_type) {
++	struct brcm_subchannel *sub = brcm_get_active_subchannel(p);
++ 
++	if(!sub) {
++		ast_debug(9, "Unable to find active subchannel\n");
++		return;
++	}
++
++	/* Start the pbx */
++	if (!sub->connection_init) {
++		sub->connection_id = ast_atomic_fetchadd_int((int *)&current_connection_id, +1);
++		brcm_create_connection(sub);
++	}
++
++	brcm_new(sub, AST_STATE_RING, "0", announce_type, NULL, NULL, NULL);
++}
++
++static void testnet_get_status_cb(struct ubus_request *req, int type, struct blob_attr *msg) {
++
++	struct blob_attr *tb[__TESTNET_ARR_MAX];
++	blobmsg_parse(testnet_policy, __TESTNET_ARR_MAX, tb, blob_data(msg), blob_len(msg));
++
++	if (tb[INTERNET_STATUS] && blobmsg_get_bool(tb[INTERNET_STATUS]))
++		internet_connection = true;
++	else
++		internet_connection = false;
++}
++
++/* ubus call testnet status */
++static int check_internet_status(void) {
++	struct ubus_context *local_ctx;
++	struct blob_buf bb;
++	uint32_t id;
++
++	local_ctx = ubus_connect(NULL);
++
++	if (!local_ctx) {
++		ast_log(LOG_ERROR, "%s(): ubus_connect() failed\n", __func__);
++		return -1;
++	}
++
++	ubus_lookup_id(local_ctx, "testnet", &id);
++	if(!id)
++		return -1;
++
++	memset(&bb, 0, sizeof(bb));
++	blob_buf_init(&bb, 0);
++	int ret = ubus_invoke(local_ctx, id, "status", bb.head, testnet_get_status_cb, NULL, 2000);
++	blob_buf_free(&bb);
++	ubus_free(local_ctx);
++
++	return (ret == UBUS_STATUS_OK ? 0 : -1);
++}
++
++
+ static int check_is_sip_account_registered(const char *line, const char *sip_account)
+ {
+ 	/* The example output of the command is shown below.
+@@ -2423,6 +2493,10 @@
+ 			p->dtmf_first        = -1;
+ 			p->dtmfbuf[p->dtmf_len] = '\0';
+ 			sub->channel_state = OFFHOOK;
++
++			if(check_internet_status()) {
++				ast_log(LOG_ERROR, "UBUS call failed for internet check!\n");
++			}
+ 
+ 			if (owner) {
+ 				if (!sub->connection_init) {
+@@ -2456,24 +2530,36 @@
+ 				brcm_send_ubus_event("CALL_UNHOLD", p->line_id);
+ 			} else if (sub->channel_state == OFFHOOK) {
+ 				/* EVENT_OFFHOOK changed endpoint state to OFFHOOK, apply dialtone */
+-				if ( p->context[0] != '\0' && is_sip_account_registered(p->context)) {
+-					ast_debug(9, "Resetting dial tones.\n");
+-					p->dialtone = voicemail_messages_waiting(p->context) ? mwi_dialtone_state : DIALTONE_ON;
+-					brcm_signal_dialtone(p);
+-					brcm_send_ubus_event("DIALTONE_ON", p->line_id);
+-					channel_settings *s = &channel_config[p->line_id];
+-					if (strlen(s->autodial_ext)) {
+-						/* Schedule autodial timeout if autodial extension is set */
+-						p->autodial_timer_id = ast_sched_add(sched, s->autodial_timeoutmsec, handle_autodial_timeout, p);
+-					} else {
+-						/* No autodial, schedule dialtone timeout */
+-						ast_verbose("Scheduling dialtone timeout in %dms\n", s->dialtone_timeoutmsec);
+-						p->dialtone_timeout_timer_id = ast_sched_add(sched, s->dialtone_timeoutmsec, handle_dialtone_timeout, p);
++				if ( p->context[0] != '\0' ) {
++					if (internet_connection && is_sip_account_registered(p->context)) {
++						ast_debug(9, "Resetting dial tones.\n");
++						p->dialtone = voicemail_messages_waiting(p->context) ? mwi_dialtone_state : DIALTONE_ON;
++						brcm_signal_dialtone(p);
++						brcm_send_ubus_event("DIALTONE_ON",p->line_id);
++						channel_settings *s = &channel_config[p->line_id];
++						if (strlen(s->autodial_ext)) {
++							/* Schedule autodial timeout if autodial extension is set */
++							p->autodial_timer_id = ast_sched_add(sched, s->autodial_timeoutmsec, handle_autodial_timeout, p);
++						} else {
++							/* No autodial, schedule dialtone timeout */
++							ast_verbose("Scheduling dialtone timeout in %dms\n", s->dialtone_timeoutmsec);
++							p->dialtone_timeout_timer_id = ast_sched_add(sched, s->dialtone_timeoutmsec, handle_dialtone_timeout, p);
++						}
+ 					}
+-				} else {
+-					ast_debug(9, "OFFHOOK but SIP account not registered\n");
+-				}
+-			}
++					else {
++						p->dialtone = DIALTONE_OFF;
++
++						if(internet_connection) {
++							ast_log(LOG_WARNING, "Internet connection exists but registration failed!!\n");
++							brcm_play_announcement(p, "registration_fail");
++						}
++						else {
++							ast_log(LOG_WARNING, "Internet connection does not exist!!\n");
++							brcm_play_announcement(p, "internet_down");
++						}
++ 					}
++ 				}
++ 			}
+ 			break;
+ 		}
+ 		case EVENT_ONHOOK: {

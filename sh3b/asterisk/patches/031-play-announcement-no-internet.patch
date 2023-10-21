@@ -1,0 +1,24 @@
+--- a/channels/chan_brcm.c
++++ b/channels/chan_brcm.c
+@@ -128,6 +128,7 @@
+ static void handle_bt_digitmap(struct brcm_subchannel *sub);
+ static int handle_bt_interdigit_timeout(const void *data);
+ static int endpt_get_rtp_stats(int line);
++static int is_sip_account_registered(const char *sip_account);
+ static int is_call_waiting_enabled(const char *sip_account);
+ static int has_call_in_sip_client(const char *sip_account);
+
+@@ -2575,6 +2576,13 @@
+ 		return;
+ 	}
+ 
++	// Special case where we don't play number unrecognised when we have no internet
++	// Otherwise it is played on top of the no internet message (HFS-786)
++	if (!is_sip_account_registered(p->context) && strcmp(announce_type, "number_unrecognised") == 0) {
++		ast_debug(9, "SIP account not registered - not playing number_unobtainable\n");
++		return;
++	}
++
+ 	/* Start the pbx */
+ 	if (!sub->connection_init) {
+ 		sub->connection_id = ast_atomic_fetchadd_int((int *)&current_connection_id, +1);

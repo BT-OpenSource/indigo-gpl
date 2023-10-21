@@ -1,0 +1,359 @@
+Index: asterisk-18.4.0/res/res_pjsip_outbound_registration.c
+===================================================================
+--- asterisk-18.4.0.orig/res/res_pjsip_outbound_registration.c
++++ asterisk-18.4.0/res/res_pjsip_outbound_registration.c
+@@ -407,6 +407,8 @@ struct sip_outbound_registration_client_
+ 	unsigned int is494;
+ 	/*! \brief Last successful registration time (seconds since unix epoch) */
+ 	unsigned int last_successful_registration;
++	/*! \brief Request for which the response was received with authorization header */
++	pjsip_tx_data *last_request;
+ };
+ 
+ /*! \brief Outbound registration state information (persists for lifetime that registration should exist) */
+@@ -430,6 +432,9 @@ static AO2_GLOBAL_OBJ_STATIC(current_sta
+ /*! subscription id for network change events */
+ static struct stasis_subscription *network_change_sub;
+ 
++/*! \brief Free any endpoint security mechanisms that have been stored */
++static void clear_endpoint_security_mechanisms(struct sip_outbound_registration_client_state *client_state);
++
+ /*! \brief hashing function for state objects */
+ static int registration_state_hash(const void *obj, const int flags)
+ {
+@@ -679,6 +684,43 @@ static int add_configured_supported_head
+ 	return 1;
+ }
+ 
++/*! \brief Helper function to update required mediasec headers.
++ * We will check existing mediasec headers in 'tdata->msg'
++ * and we will include default mediasec headers and stored
++ * 'Security-Verify' headers if we haven't got any in 'tdata->msg'
++ */
++static void update_mediasec_headers(struct sip_outbound_registration_client_state *client_state, pjsip_tx_data *tdata) {
++
++	if (client_state->mediasec) {
++		static const pj_str_t security_client_str = { "Security-Client", 15 };
++		static const pj_str_t security_verify_str = { "Security-Verify", 15 };
++
++		if(!pjsip_msg_find_hdr_by_name(tdata->msg, &security_client_str, NULL)) {
++			ast_debug(1, "Adding default security headers\n");
++			ast_sip_add_header(tdata,"Security-Client","sdes-srtp;mediasec");
++			ast_sip_add_header(tdata,"Proxy-Require","mediasec");
++			ast_sip_add_header(tdata,"Require","mediasec");	
++		}
++
++		if(!pjsip_msg_find_hdr_by_name(tdata->msg, &security_verify_str, NULL)) {
++			struct ast_sip_endpoint *endpoint = ast_sorcery_retrieve_by_id(ast_sip_get_sorcery(), "endpoint",
++						client_state->registration_name);
++			if (!endpoint) {
++				ast_log(LOG_ERROR, "No endpoint found to add mediasec headers\n");
++				return;
++			}
++
++			if(!AST_LIST_EMPTY(&endpoint->security_mechanisms)) {
++				struct security_mechanism *sec_mechanism;
++				AST_LIST_TRAVERSE(&endpoint->security_mechanisms, sec_mechanism, entry) {
++					ast_debug(1, "Adding security header: %s\n", sec_mechanism->value);
++					ast_sip_add_header(tdata,"Security-Verify",sec_mechanism->value);
++				}
++			}
++		}
++	}
++}
++
+ /*! \brief Callback function for registering */
+ static int handle_client_registration(void *data)
+ {
+@@ -687,6 +729,7 @@ static int handle_client_registration(vo
+ 
+ 	if (set_outbound_initial_authentication_credentials(client_state->client, &client_state->outbound_auths)) {
+ 		ast_log(LOG_WARNING, "Failed to set initial authentication credentials\n");
++		return -1;
+ 	}
+ 
+ 	if (client_state->status == SIP_REGISTRATION_STOPPED
+@@ -709,40 +752,61 @@ static int handle_client_registration(vo
+ 		return -1;
+ 	}
+ 
+-	/* Add some header for mediasec */
+-	if (client_state->mediasec) {
+-		if (client_state->is494) {
+-			/* answer for 494 */
+-			struct ast_sip_endpoint *endpoint = ast_sorcery_retrieve_by_id(ast_sip_get_sorcery(), "endpoint",
+-						client_state->registration_name);
+-			if (!endpoint) {
+-				ast_log(LOG_ERROR, "No endpoint found to add mediasec headers\n");
+-				return -1;
+-			}
++	/*
++	 *  Check & Add default mediasec headers and also if we have stored
++	 *  the security_mechanisms earlier we will add them if we haven't
++	 *  got any in 'tdata->msg'
++	 */
++	update_mediasec_headers(client_state, tdata);
+ 
+-			ast_debug(1, "Adding default security headers\n");
+-			ast_sip_add_header(tdata,"Security-Client","sdes-srtp;mediasec");
+-			ast_sip_add_header(tdata,"Proxy-Require","mediasec");
+-			ast_sip_add_header(tdata,"Require","mediasec");
++	registration_client_send(client_state, tdata);
+ 
+-			if(!AST_LIST_EMPTY(&endpoint->security_mechanisms)) {
+-				struct security_mechanism *sec_mechanism;
+-				AST_LIST_TRAVERSE(&endpoint->security_mechanisms, sec_mechanism, entry) {
+-					ast_debug(1, "Adding security header: %s\n", sec_mechanism->value);
+-					ast_sip_add_header(tdata,"Security-Verify",sec_mechanism->value);
+-				}
+-			}
+-		}
+-		else {
+-			ast_debug(1, "Adding default security headers\n");
+-			ast_sip_add_header(tdata,"Security-Client","sdes-srtp;mediasec");
+-			ast_sip_add_header(tdata,"Proxy-Require","mediasec");
+-			ast_sip_add_header(tdata,"Require","mediasec");
+-		}
++	return 0;
++}
++
++static int handle_client_deregistration(struct sip_outbound_registration_client_state *client_state)
++{
++	pjsip_tx_data *tdata;
++
++	if (client_state->status == SIP_REGISTRATION_STOPPED
++		|| pjsip_regc_unregister(client_state->client, &tdata) != PJ_SUCCESS) {
++		return 0;
+ 	}
+ 
+-	registration_client_send(client_state, tdata);
++	if (!add_configured_supported_headers(client_state, tdata)) {
++		ast_log(LOG_WARNING, "Failed to set supported headers\n");
++		return -1;
++	}
++	pjsip_authorization_hdr *auth_header = NULL;
+ 
++	if(client_state->last_request)
++		auth_header = (pjsip_authorization_hdr*)pjsip_msg_find_hdr(client_state->last_request->msg, PJSIP_H_AUTHORIZATION, NULL);
++
++	if(auth_header){
++		pjsip_msg_add_hdr(tdata->msg, (pjsip_authorization_hdr *)auth_header);
++	}
++	else {
++		ast_log(LOG_ERROR, "Failed to add authorization header!\n");
++	}
++
++	/*
++	 * Check mediasec state / existing mediasec headers in 'tdata->msg'
++	 * and add default mediasec headers & stored (if any) 
++	 * 'Security-Verify' headers if we haven't got any of them 
++	 * in 'tdata->msg'
++	 */
++	update_mediasec_headers(client_state, tdata);
++
++	if(registration_client_send(client_state, tdata) != PJ_SUCCESS) {
++		return -1;
++	}
++
++	/*
++	 * Check mediasec state and free any endpoint security 
++	 * mechanisms that have been stored
++	 */
++	clear_endpoint_security_mechanisms(client_state);
++	ast_sip_auth_vector_destroy(&client_state->outbound_auths);
+ 	return 0;
+ }
+ 
+@@ -850,9 +914,7 @@ static int handle_client_state_destructi
+ 
+ 			update_client_state_status(client_state, SIP_REGISTRATION_STOPPING);
+ 			client_state->destroy = 1;
+-			if (pjsip_regc_unregister(client_state->client, &tdata) == PJ_SUCCESS
+-				&& add_configured_supported_headers(client_state, tdata)
+-				&& registration_client_send(client_state, tdata) == PJ_SUCCESS) {
++			if (!handle_client_deregistration(client_state)) {
+ 				ao2_ref(client_state, -1);
+ 				return 0;
+ 			}
+@@ -1099,12 +1161,21 @@ static void save_response_fields_to_tran
+ }
+ 
+ /*! \brief Free any endpoint security mechanisms that have been stored */
+-static void clear_endpoint_security_mechanisms(struct ast_sip_endpoint *endpoint)
++static void clear_endpoint_security_mechanisms(struct sip_outbound_registration_client_state *client_state)
+ {
+-	struct security_mechanism *sec_mechanism;
++	if (client_state->mediasec) {
++		struct security_mechanism *sec_mechanism;
++		struct ast_sip_endpoint *endpoint = ast_sorcery_retrieve_by_id(ast_sip_get_sorcery(), "endpoint",
++				client_state->registration_name);
++
++		if (!endpoint) {
++			ast_log(LOG_ERROR, "No endpoint found!\n");
++			return;
++		}
+ 
+-	while ((sec_mechanism = AST_LIST_REMOVE_HEAD(&endpoint->security_mechanisms, entry))) {
+-		ast_free(sec_mechanism);
++		while ((sec_mechanism = AST_LIST_REMOVE_HEAD(&endpoint->security_mechanisms, entry))) {
++			ast_free(sec_mechanism);
++		}
+ 	}
+ }
+ 
+@@ -1198,7 +1269,7 @@ static int handle_registration_response(
+ 					sec_mechanism = ast_calloc(1, sizeof(*sec_mechanism) + pj_strlen(&secSrv->hvalue));
+ 					if (!sec_mechanism) {
+ 						ast_log(LOG_ERROR, "Unable to store server security mechanisms\n");
+-						clear_endpoint_security_mechanisms(endpoint);
++						clear_endpoint_security_mechanisms(response->client_state);
+ 						return -1;
+ 					}
+ 					ast_copy_pj_str(&sec_mechanism->value, &secSrv->hvalue, pj_strlen(&secSrv->hvalue) + 1);
+@@ -1233,23 +1304,13 @@ static int handle_registration_response(
+ 			ast_debug(1, "Sending authenticated REGISTER to server '%s' from client '%s'\n",
+ 					server_uri, client_uri);
+ 
+-			/* Add MEDIASEC headers */
+-			if (response->client_state->mediasec) {
+-				struct ast_sip_endpoint *endpoint = ast_sorcery_retrieve_by_id(ast_sip_get_sorcery(), "endpoint",
+-						response->client_state->registration_name);
+-
+-				if (!endpoint) {
+-					ast_log(LOG_ERROR, "No endpoint found to store/add mediasec headers\n");
+-					return -1;
+-				}
+-				if(!AST_LIST_EMPTY(&endpoint->security_mechanisms)) {
+-					struct security_mechanism *sec_mechanism;
+-					AST_LIST_TRAVERSE(&endpoint->security_mechanisms, sec_mechanism, entry) {
+-						ast_debug(1, "Adding security header: %s\n", sec_mechanism->value);
+-						ast_sip_add_header(tdata,"Security-Verify",sec_mechanism->value);
+-					}
+-				}
+-			}
++			/*
++	 		  * Check existing mediasec headers in 'tdata->msg'
++	 		  * and add default mediasec headers and stored (if any) 
++			  * 'Security-Verify' headers if we haven't got any of them 
++			  * in 'tdata->msg'
++	 		*/
++			update_mediasec_headers(response->client_state, tdata);
+ 
+ 			pjsip_tx_data_add_ref(tdata);
+ 			res = registration_client_send(response->client_state, tdata);
+@@ -1270,13 +1331,11 @@ static int handle_registration_response(
+ 		/* Otherwise, fall through so the failure is processed appropriately */
+ 	}
+ 
+-	response->client_state->auth_attempted = 0;
+ 
+ 	if (PJSIP_IS_STATUS_IN_CLASS(response->code, 200)) {
+ 		/* Check if this is in regards to registering or unregistering */
++        response->client_state->is494 = 0;
+ 		if (response->expiration) {
+-
+-			response->client_state->is494=0;
+ 			/* If the registration went fine simply reschedule registration for the future */
+ 			ast_debug(1, "Outbound registration to '%s' with client '%s' successful\n", server_uri, client_uri);
+ 			update_client_state_status(response->client_state, SIP_REGISTRATION_REGISTERED);
+@@ -1286,12 +1345,21 @@ static int handle_registration_response(
+ 
+ 			response->client_state->last_successful_registration = time(NULL);
+ 
++        	if((pjsip_authorization_hdr*)pjsip_msg_find_hdr(response->old_request->msg, PJSIP_H_AUTHORIZATION, NULL)) {
++				/* Check if we have authorization header. If not, keep the saved request as it is */
++				if (response->client_state->last_request) {
++					pjsip_tx_data_dec_ref(response->client_state->last_request);
++				}
++
++				pjsip_tx_data_add_ref(response->old_request);
++				response->client_state->last_request = response->old_request;
++			}
++
+ 			/* See if we should monitor for transport shutdown */
+ 			registration_transport_monitor_setup(response->rdata->tp_info.transport,
+ 				response->client_state->registration_name);
+ 		} else {
+ 			ast_debug(1, "Outbound unregistration to '%s' with client '%s' successful\n", server_uri, client_uri);
+-			response->client_state->is494=0;
+ 			update_client_state_status(response->client_state, SIP_REGISTRATION_UNREGISTERED);
+ 			sip_outbound_registration_send_ubus_event("UNREGISTERED",response->expiration,client_uri);
+ 			ast_sip_transport_monitor_unregister(response->rdata->tp_info.transport,
+@@ -1378,11 +1378,9 @@ static int handle_registration_response(void *data)
+ 			/* 494 loop detected! This is fatal! */
+ 			update_client_state_status(response->client_state, SIP_REGISTRATION_REJECTED_PERMANENT);
+ 			sip_outbound_registration_send_ubus_event("UNREGISTERED",response->expiration,client_uri);
+-			/* reset is494 */
+-			response->client_state->is494=0;
+ 		} else {
+ 			/* Try (initial) registration again - but now with additional headers */
+-			response->client_state->is494=1;
++			response->client_state->is494 = 1;
+ 			ao2_ref(response->client_state, +1);
+ 			handle_client_registration(response->client_state);
+ 			ao2_ref(response, -1);
+@@ -1363,6 +1429,9 @@ static int handle_registration_response(
+ 		}
+ 	}
+ 
++	/* reset is494 */
++	response->client_state->is494 = 0;
++
+ 	ast_system_publish_registry("PJSIP", client_uri, server_uri,
+ 		sip_outbound_registration_status_str(response->client_state->status), NULL);
+ 
+@@ -1481,6 +1550,9 @@ static void sip_outbound_registration_cl
+ 	if (client_state->last_tdata) {
+ 		pjsip_tx_data_dec_ref(client_state->last_tdata);
+ 	}
++	if (client_state->last_request) {
++		pjsip_tx_data_dec_ref(client_state->last_request);
++	}
+ }
+ 
+ /*! \brief Allocator function for registration state */
+@@ -2034,29 +2106,16 @@ static int outbound_auths_to_var_list(co
+ 
+ static int unregister_task(void *obj)
+ {
+-	struct sip_outbound_registration_state *state = obj;
+-	struct pjsip_regc *client = state->client_state->client;
+-	pjsip_tx_data *tdata;
+-	pjsip_regc_info info;
++	struct sip_outbound_registration_state * state = obj;
+ 
+-	pjsip_regc_get_info(client, &info);
+-	ast_debug(1, "Unregistering contacts with server '%s' from client '%s'\n",
+-		state->registration->server_uri, state->registration->client_uri);
++	if(state->client_state->status != SIP_REGISTRATION_REGISTERED) {
++		ao2_ref(state, -1);
++		return 0;
++	}
+ 
+ 	cancel_registration(state->client_state);
+ 
+-	if (pjsip_regc_unregister(client, &tdata) == PJ_SUCCESS
+-		&& add_configured_supported_headers(state->client_state, tdata)) {
+-		if (state->client_state->mediasec) {
+-			struct ast_sip_endpoint *endpoint = ast_sorcery_retrieve_by_id(ast_sip_get_sorcery(), "endpoint",
+-							state->client_state->registration_name);
+-			ast_sip_add_header(tdata,"Security-Client","sdes-srtp;mediasec");
+-			ast_sip_add_header(tdata,"Proxy-Require","mediasec");
+-			ast_sip_add_header(tdata,"Require","mediasec");
+-			clear_endpoint_security_mechanisms(endpoint);
+-		}
+-		registration_client_send(state->client_state, tdata);
+-	}
++	handle_client_deregistration(state->client_state);
+ 
+ 	ao2_ref(state, -1);
+ 	return 0;
+@@ -2470,7 +2529,7 @@ static int cli_print_body(void *obj, voi
+ 			? AST_VECTOR_GET(&registration->outbound_auths, 0)
+ 			: "n/a",
+ 		(state ? sip_outbound_registration_status_str(state->client_state->status) : "Unregistered"),
+-		state->client_state->last_successful_registration);
++		(state ? state->client_state->last_successful_registration : 0));
+ 	ao2_cleanup(state);
+ 
+ 	if (context->show_details

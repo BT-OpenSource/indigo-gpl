@@ -1,0 +1,125 @@
+--- a/networking/udhcp/common.c
++++ b/networking/udhcp/common.c
+@@ -46,6 +46,7 @@ const struct dhcp_optflag dhcp_optflags[
+ 	{ OPTION_IP | OPTION_LIST                 , 0x29 }, /* DHCP_NIS_SERVER    */
+ 	{ OPTION_IP | OPTION_LIST     | OPTION_REQ, 0x2a }, /* DHCP_NTP_SERVER    */
+ 	{ OPTION_43								  , 0x2b }, /* DHCP_VENDOR_SPEC_INF */
++	{ OPTION_125                              , 0x7d }, /* DHCP_VIVSO */
+ 	{ OPTION_IP | OPTION_LIST                 , 0x2c }, /* DHCP_WINS_SERVER   */
+ 	{ OPTION_U32                              , 0x33 }, /* DHCP_LEASE_TIME    */
+ 	{ OPTION_IP                               , 0x36 }, /* DHCP_SERVER_ID     */
+@@ -118,6 +119,7 @@ const char dhcp_option_strings[] ALIGN1
+ 	"nissrv" "\0"           /* DHCP_NIS_SERVER      */
+ 	"ntpsrv" "\0"           /* DHCP_NTP_SERVER      */
+ 	"vendorspecinf" "\0"    /* DHCP_VENDOR_SPEC_INF */
++	"vivsoinf" "\0"         /* DHCP_VIVSO           */
+ 	"wins" "\0"             /* DHCP_WINS_SERVER     */
+ 	"lease" "\0"            /* DHCP_LEASE_TIME      */
+ 	"serverid" "\0"         /* DHCP_SERVER_ID       */
+@@ -160,6 +162,7 @@ const uint8_t dhcp_option_lengths[] ALIG
+ 	[OPTION_IP_PAIR] = 8,
+ //	[OPTION_BOOLEAN] = 1,
+ 	[OPTION_43] 	 = 1,
++	[OPTION_125] 	 = 1,
+ 	[OPTION_STRING] =  1,  /* ignored by udhcp_str2optset */
+ 	[OPTION_STRING_HOST] = 1,  /* ignored by udhcp_str2optset */
+ #if ENABLE_FEATURE_UDHCP_RFC3397
+--- a/networking/udhcp/common.h
++++ b/networking/udhcp/common.h
+@@ -81,6 +81,7 @@ enum {
+ 	OPTION_IP = 0,
+ 	OPTION_IP_PAIR,
+ 	OPTION_43,
++	OPTION_125,
+ 	OPTION_STRING,
+ 	/* Opts of STRING_HOST type will be sanitized before they are passed
+ 	 * to udhcpc script's environment: */
+--- a/networking/udhcp/dhcpc.c
++++ b/networking/udhcp/dhcpc.c
+@@ -130,6 +130,7 @@ static const uint8_t len_of_option_as_st
+ 	[OPTION_STATIC_ROUTES   ] = sizeof("255.255.255.255/32 255.255.255.255 "),
+ 	[OPTION_6RD             ] = sizeof("132 128 ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff 255.255.255.255 "),
+ 	[OPTION_43				] = 4,
++	[OPTION_125             ] = 4,
+ 	[OPTION_STRING          ] = 1,
+ 	[OPTION_STRING_HOST     ] = 1,
+ #if ENABLE_FEATURE_UDHCP_RFC3397
+@@ -278,6 +279,78 @@ static NOINLINE char *xmalloc_optname_op
+ 			}
+ 			return ret; /* Short circuit this case */
+ 		}
++		case OPTION_125: {
++			/* parse "Encapsulated vendor-identified-vendor-specific options" (RFC3925).
++			 * Given below the format:
++			 *
++			 * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
++			 * |  option-code  |  option-len   |
++			 * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
++			 * |      enterprise-number1       |
++			 * |                               |
++			 * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
++			 * |   data-len1   |               |
++			 * +-+-+-+-+-+-+-+-+ option-data1  |
++			 * /                               /
++			 * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+ -----
++			 * |      enterprise-number2       |   ^
++			 * |                               |   |
++			 * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+   |
++			 * |   data-len2   |               | optional
++			 * +-+-+-+-+-+-+-+-+ option-data2  |   |
++			 * /                               /   |
++			 * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+   |
++			 * ~            ...                ~   V
++			 * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+ -----
++			 *
++			 * Here we are only interested on the data of Enterprise ID 3561. The
++			 * format of the data in Enterprise ID 3561 is shown below
++			 *
++			 *  Enterprise Id  Len  Sub Op  SLen  Data Sub Op  SLen Data       Sub Op  SLen Data
++			 * +-------------+-----+------+------+----+------+-----+----+-----+------+-----+----+
++			 * |     3561    |  n  |   1  |  n1  | D1 |   2  |  n2 | D2 | ... |   6  |  n6 | D6 |
++			 * +-------------+-----+------+------+----+------+-----+----+-----+------+-----+----+
++			 */
++			if (len > 4) {
++				uint8_t *opt_data = option;
++				while (opt_data < option + len) {
++					uint32_t temp = 0, ent_id = 0;
++					uint8_t data_len = 0;
++					uint8_t *vendor_data = NULL, *data = NULL;
++					bool first = true;
++
++					move_from_unaligned32(temp, opt_data);
++					ent_id = (uint32_t) ntohl(temp);
++					opt_data += 4;
++					data_len = opt_data[0];
++					if (ent_id != 3561) {
++						opt_data += data_len + 1;
++						continue;
++					}
++
++					vendor_data = opt_data + 1;
++					data = vendor_data;
++					while (data < vendor_data + data_len) {
++						uint8_t sub_opt = data[0];
++						uint8_t sub_opt_len = data[1];
++						data += 2;
++
++						if (first != true)
++							dest += sprintf(dest, ",");
++						first = false;
++						dest += sprintf(dest, "%d=", sub_opt);
++						memcpy(dest, data, sub_opt_len);
++						dest += sub_opt_len;
++						data += sub_opt_len;
++						*dest = '\0';
++					}
++					opt_data += data_len + 1;
++				}
++			} else {
++				*dest = '\0';
++			}
++			return ret;
++		}
+ 		/* Note: options which use 'return' instead of 'break'
+ 		 * (for example, OPTION_STRING) skip the code which handles
+ 		 * the case of list of options.

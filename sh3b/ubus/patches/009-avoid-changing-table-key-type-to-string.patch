@@ -1,0 +1,13 @@
+--- a/lua/ubus.c
++++ b/lua/ubus.c
+@@ -184,7 +184,9 @@ ubus_lua_format_blob(lua_State *L, struc
+ {
+ 	void *c;
+ 	bool rv = true;
+-	const char *key = table ? lua_tostring(L, -2) : NULL;
++	lua_pushvalue(L,-2);
++	const char *key = table ? lua_tostring(L, -1) : NULL;
++	lua_pop(L,1);
+ 
+ 	switch (lua_type(L, -1))
+ 	{

@@ -1,0 +1,87 @@
+--- a/channels/chan_brcm.c
++++ b/channels/chan_brcm.c
+@@ -722,8 +722,23 @@ static void chan_brcm_modify_codec(struc
+ 		ast_channel_lock(sub->owner);
+ 
+ 		if (bridged_chan) {
+-			ast_channel_ptime_set(sub->owner,ast_channel_ptime_get(bridged_chan));
+-			ast_channel_codec_set(sub->owner,ast_channel_codec_get(bridged_chan));
++			// for the internal call, bridged_chan is allocated but codec and ptime is not set so need to check it here and set default
++			// ptime and get codec from sub-owner in this case
++			ast_channel_ptime_set(sub->owner, ast_channel_ptime_get(bridged_chan) ? ast_channel_ptime_get(bridged_chan) : default_ptime);
++			ast_channel_codec_set(sub->owner, !ast_strlen_zero(ast_channel_codec_get(bridged_chan)) ?
++				ast_channel_codec_get(bridged_chan) : ast_format_get_name(ast_channel_writeformat(sub->owner)));
++			// we need to set caps here from bridged_chan to avoid asterisk transcoding which break audio in some cases
++			struct ast_format_cap *caps;
++			caps = ast_format_cap_alloc(AST_FORMAT_CAP_FLAG_DEFAULT);
++			if (caps) {
++				ast_format_cap_append(caps, map_rtpname_to_format((char *)ast_channel_codec_get(bridged_chan)), 0);
++				ast_channel_nativeformats_set(sub->owner, caps);
++				ao2_ref(caps, -1);
++			} else {
++				ao2_cleanup(caps);
++				ast_log(LOG_WARNING, "Unable to allocate caps\n");
++			}
++
+ 			ast_log(LOG_NOTICE, "Sync local codec to :%s, and ptime tp %d \n", ast_channel_codec_get(sub->owner), ast_channel_ptime_get(sub->owner));
+ 			ao2_ref(bridged_chan, -1);
+ 		} else {
+@@ -2926,6 +2941,7 @@ static void audio_packet_handler(pe_pack
+ 		 || sub->channel_state == CALLING
+ 		 || sub->channel_state == RINGBACK
+ 		 || (owner && strcmp(brcm_get_codec_string(payload_type),ast_channel_codec_get(owner)))){
++			chan_brcm_modify_codec(sub); //in case of no bridge peer when doing the modify_codec during outgoing call
+ 			drop_frame=1;
+ 		} else {
+ 			struct ast_format *format = map_rtptype_to_format(payload_type);
+--- a/res/res_pjsip_sdp_rtp.c
++++ b/res/res_pjsip_sdp_rtp.c
+@@ -421,7 +421,9 @@ static void get_codecs(struct ast_sip_se
+ 		if (framing && session->endpoint->media.rtp.use_ptime) {
+ 			ast_rtp_codecs_set_framing(codecs, framing);
+ 			if (session->channel){
++				ast_channel_lock(session->channel);
+ 				ast_channel_ptime_set(session->channel, framing);
++				ast_channel_unlock(session->channel);
+ 			}
+ 		}
+ 	}
+@@ -2107,7 +2109,6 @@ static int apply_negotiated_sdp_stream(s
+ 		SCOPE_EXIT_RTN_VALUE(1, "No channel\n");
+ 	}
+ 
+-	ast_channel_codec_set(session->channel, ast_format_get_codec_name(ast_channel_writeformat(session->channel)));
+ 	/* Ensure incoming transport is compatible with the endpoint's configuration */
+ 	if (!session->endpoint->media.rtp.use_received_transport &&
+ 		check_endpoint_media_transport(session->endpoint, remote_stream) == AST_SIP_MEDIA_TRANSPORT_INVALID) {
+@@ -2180,13 +2181,20 @@ static int apply_negotiated_sdp_stream(s
+ 		// Incoming, just set cap with asterisk_stream, as the local_chan has been created with only the first codec in the cap list.
+ 		struct ast_format_cap *caps;
+ 		caps = ast_format_cap_alloc(AST_FORMAT_CAP_FLAG_DEFAULT);
+-		ast_format_cap_append(caps, ast_format_cap_get_format(ast_stream_get_formats(asterisk_stream), 0), ast_channel_ptime_get(session->channel));
+-		ast_channel_nativeformats_set(session->channel, caps);
++		if (caps) {
++			ast_format_cap_append(caps, ast_format_cap_get_format(ast_stream_get_formats(asterisk_stream), 0), ast_channel_ptime_get(session->channel));
++			ast_channel_nativeformats_set(session->channel, caps);
++			ao2_ref(caps, -1);
++		} else {
++			ao2_cleanup(caps);
++			ast_log(LOG_WARNING, "Unable to allocate caps\n");
++		}
+ 	}
+ 	/* Get and set the ptime, get from remote_stream if it has, otherwise get from local_stream */
+ 	pjmedia_sdp_attr *attr;
+ 	unsigned long framing;
+ 	struct pjmedia_sdp_media *local_stream = local->media[index];
++	ast_channel_lock(session->channel);
+ 	if ((attr = pjmedia_sdp_media_find_attr2(remote_stream, "ptime", NULL))) {
+ 		framing = pj_strtoul(pj_strltrim(&attr->value));
+ 		ast_channel_ptime_set(session->channel, framing);
+@@ -2199,7 +2207,6 @@ static int apply_negotiated_sdp_stream(s
+ 	ast_log(LOG_NOTICE, "channel %s, codec: %s, ptime: %d \n", ast_channel_name(session->channel), ast_channel_codec_get(session->channel), ast_channel_ptime_get(session->channel));
+ 
+ 	/* Set the channel uniqueid on the RTP instance now that it is becoming active */
+-	ast_channel_lock(session->channel);
+ 	ast_rtp_instance_set_channel_id(session_media->rtp, ast_channel_uniqueid(session->channel));
+ 	ast_channel_unlock(session->channel);
+ 

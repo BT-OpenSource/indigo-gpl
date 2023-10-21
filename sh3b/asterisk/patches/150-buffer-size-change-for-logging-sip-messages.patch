@@ -1,0 +1,11 @@
+--- a/main/logger.c
++++ b/main/logger.c
+@@ -1568,7 +1568,7 @@ static struct sigaction handle_SIGXFSZ = {
+ static void logger_print_normal(struct logmsg *logmsg)
+ {
+ 	struct logchannel *chan = NULL;
+-	char static_buf[BUFSIZ];
++	char static_buf[SYSLOG_MESSAGE_MAXLEN];
+ 	char *buf = static_buf;
+ 	size_t buf_size = sizeof(static_buf);
+ 	size_t msg_len = strlen(logmsg->message);

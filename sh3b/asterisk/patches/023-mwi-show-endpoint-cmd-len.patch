@@ -1,0 +1,13 @@
+--- a/channels/chan_brcm.c
++++ b/channels/chan_brcm.c
+@@ -2319,8 +2319,8 @@ static int check_voicemail_dialtone(cons
+ 
+ static int voicemail_messages_waiting(const char *sip_account)
+ {
+-	char cmd[32];
+-	sprintf(cmd, "pjsip show endpoint %s", sip_account);
++	char cmd[64];
++	snprintf(cmd, sizeof(cmd), "pjsip show endpoint %s", sip_account);
+ 	if (call_cli_command(cmd, &check_voicemail_messages_waiting, NULL))
+ 		return call_cli_command(cmd, &check_voicemail_dialtone, NULL);
+ 	else

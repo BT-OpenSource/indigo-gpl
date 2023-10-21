@@ -1,0 +1,60 @@
+--- a/res/res_pjsip_outbound_registration.c
++++ b/res/res_pjsip_outbound_registration.c
+@@ -251,9 +251,6 @@ static int set_outbound_initial_authenti
+ /*! \brief Some thread local storage used to determine if the running thread invoked the callback */
+ AST_THREADSTORAGE(register_callback_invoked);
+ 
+-/*! \brief Amount of buffer time (in seconds) before expiration that we re-register at */
+-#define REREGISTER_BUFFER_TIME 10
+-
+ /*! \brief Size of the buffer for creating a unique string for the line */
+ #define LINE_PARAMETER_SIZE 8
+ static const char broadcast_path[] = "voice.sip.client";
+@@ -1141,6 +1138,25 @@ static void clear_endpoint_security_mech
+ 	}
+ }
+ 
++/*! \brief Return the number of seconds until we need to re-register */
++static int next_registration_time(int expires)
++{
++	/*
++	 * The next registration time should be between 80 percent of expiry time and 100 percent of
++	 * expiration time of the registration minus 32 seconds.
++	 * For ex, if 2700 is expires time, the range should be (80% of 2700) 2160 - 2668 (2700-32).
++	 */
++	int min_reg_time = expires * 0.8;
++	int max_reg_time = expires - 32;
++	int next_reg_time = min_reg_time + (ast_random() % (max_reg_time - min_reg_time + 1));
++
++	ast_debug(3, "Next registration time: %d expires = %d " \
++                 "min_reg_time = %d max_reg_time = %d\n",
++                  next_reg_time, expires, min_reg_time, max_reg_time);
++	/* Return 0 if need to register straight away */
++	return (next_reg_time < 0) ? 0 : next_reg_time;
++}
++
+ /*! \brief Callback function for handling a response to a registration attempt */
+ static int handle_registration_response(void *data)
+ {
+@@ -1259,7 +1275,6 @@ static int handle_registration_response(
+ 	if (PJSIP_IS_STATUS_IN_CLASS(response->code, 200)) {
+ 		/* Check if this is in regards to registering or unregistering */
+ 		if (response->expiration) {
+-			int next_registration_round;
+ 
+ 			response->client_state->is494=0;
+ 			/* If the registration went fine simply reschedule registration for the future */
+@@ -1267,12 +1282,7 @@ static int handle_registration_response(
+ 			update_client_state_status(response->client_state, SIP_REGISTRATION_REGISTERED);
+ 			sip_outbound_registration_send_ubus_event("REGISTERED",response->expiration,client_uri);
+ 			response->client_state->retries = 0;
+-			next_registration_round = response->expiration - REREGISTER_BUFFER_TIME;
+-			if (next_registration_round < 0) {
+-				/* Re-register immediately. */
+-				next_registration_round = 0;
+-			}
+-			schedule_registration(response->client_state, next_registration_round);
++			schedule_registration(response->client_state, next_registration_time(response->expiration));
+ 
+ 			/* See if we should monitor for transport shutdown */
+ 			registration_transport_monitor_setup(response->rdata->tp_info.transport,
