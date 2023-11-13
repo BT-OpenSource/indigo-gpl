@@ -1,0 +1,38 @@
+--- a/libbbf_api/dmcommon.c
++++ b/libbbf_api/dmcommon.c
+@@ -447,8 +447,9 @@ void synchronize_specific_config_section
+ 
+ void synchronize_specific_config_sections_with_dmmap_eq(char *package, char *section_type, char *dmmap_package, char* option_name, char* option_value, struct list_head *dup_list)
+ {
+-	struct uci_section *s, *stmp, *dmmap_sec;
++	struct uci_section *s, *stmp, *dmmap_sec, *ma_sec, *dmmap_wl_sec;
+ 	char *v;
++	char *band, *bandToFind, *dev, *inst;
+ 
+ 	uci_foreach_option_eq(package, section_type, option_name, option_value, s) {
+ 		/*
+@@ -457,6 +458,24 @@ void synchronize_specific_config_section
+ 		if ((dmmap_sec = get_dup_section_in_dmmap(dmmap_package, section_type, section_name(s))) == NULL) {
+ 			dmuci_add_section_bbfdm(dmmap_package, section_type, &dmmap_sec);
+ 			dmuci_set_value_by_section_bbfdm(dmmap_sec, "section_name", section_name(s));
++
++			if (DM_STRCMP(section_type, "radio") == 0) {
++				dmuci_get_value_by_section_string(s, "band", &band);
++
++				uci_foreach_sections("mapagent", "radio", ma_sec) {
++					dmuci_get_value_by_section_string(ma_sec, "band", &bandToFind);
++					if (DM_LSTRCMP(band, bandToFind) != 0)
++						continue;
++
++					dmuci_get_value_by_section_string(ma_sec, "device", &dev);
++
++					if ((dmmap_wl_sec = get_dup_section_in_dmmap("dmmap_wireless", "wifi-device", dev)) != NULL)
++					{
++						dmuci_get_value_by_section_string(dmmap_wl_sec, "radioinstance", &inst);
++						dmuci_set_value_by_section_bbfdm(dmmap_sec, "wifi_da_device_instance", inst);
++					}
++				}
++			}
+ 		}
+ 
+ 		/*

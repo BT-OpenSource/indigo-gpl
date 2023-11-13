@@ -1,0 +1,437 @@
+From cae5392f8d551439a1b05ece20222261026958af Mon Sep 17 00:00:00 2001
+From: Rahul <rahul.thakur@iopsys.eu>
+Date: Wed, 5 May 2021 12:48:58 +0530
+Subject: [PATCH 01/12] netifd: update with bcm vlan changes
+
+---
+ config.c       | 24 ++++++++++++++
+ config.h       |  1 +
+ device.c       | 13 ++++++--
+ system-linux.c | 88 +++++++++++++++++++++++++++++++++++++++++++++++++-
+ system-linux.h |  6 ++++
+ system.h       | 13 ++++++++
+ vlandev.c      | 71 ++++++++++++++++++++++++++++++++++++++++
+ 7 files changed, 213 insertions(+), 3 deletions(-)
+ create mode 100644 system-linux.h
+
+diff --git a/config.c b/config.c
+index d83ea9c..114dc83 100644
+--- a/config.c
++++ b/config.c
+@@ -583,6 +583,30 @@ config_parse_wireless_vlan(struct wireless_device *wdev, char *vif, struct uci_s
+ 	wireless_vlan_create(wdev, vif, b.head, s->anonymous ? name : s->e.name);
+ }
+ 
++bool
++config_is_device_present(const char *name)
++{
++	struct uci_element *e;
++	const char *dev_name;
++
++	if (!uci_network) {
++		return false;
++	}
++
++	uci_foreach_element(&uci_network->sections, e) {
++		struct uci_section *s = uci_to_section(e);
++		if (strcmp(s->type, "device") != 0)
++			continue;
++
++		dev_name = uci_lookup_option_string(uci_ctx, s, "name");
++		if (dev_name && strcmp(dev_name, name) == 0) {
++			return true;
++		}
++	}
++
++	return false;
++}
++
+ static void
+ config_parse_wireless_station(struct wireless_device *wdev, char *vif, struct uci_section *s)
+ {
+diff --git a/config.h b/config.h
+index ae77ed1..f66945a 100644
+--- a/config.h
++++ b/config.h
+@@ -21,5 +21,6 @@ extern bool config_init;
+ 
+ int config_init_all(void);
+ struct ether_addr *config_get_default_macaddr(const char *ifname);
++bool config_is_device_present(const char *name);
+ 
+ #endif
+diff --git a/device.c b/device.c
+index f9ec635..50bfa8a 100644
+--- a/device.c
++++ b/device.c
+@@ -23,6 +23,7 @@
+ 
+ #include "netifd.h"
+ #include "system.h"
++#include "system-linux.h"
+ #include "config.h"
+ #include "wireless.h"
+ 
+@@ -657,8 +658,16 @@ __device_get(const char *name, int create, bool check_vlan)
+ 
+ 	dev = avl_find_element(&devices, name, dev, avl);
+ 
+-	if (!dev && check_vlan && strchr(name, '.'))
+-		return get_vlan_device_chain(name, create);
++	if (!dev && strchr(name, '.')) {
++		if(vlanconf_exists()) {
++			// To support ethx.y.z format for 8021ad interface names
++			if (!config_is_device_present(name))
++				return get_vlan_device_chain(name, create);
++		} else {
++			// For rest of the platforms the behaviour remains as is
++			return get_vlan_device_chain(name, create);
++		}
++	}
+ 
+ 	if (name[0] == '@')
+ 		return device_alias_get(name + 1);
+diff --git a/system-linux.c b/system-linux.c
+index d914a20..fd3ca84 100644
+--- a/system-linux.c
++++ b/system-linux.c
+@@ -74,6 +74,7 @@
+ #include "netifd.h"
+ #include "device.h"
+ #include "system.h"
++#include "system-linux.h"
+ #include "utils.h"
+ 
+ struct event_socket {
+@@ -255,6 +256,17 @@ system_tos_aton(const char *src, unsigned *dst)
+ 	return true;
+ }
+ 
++bool
++vlanconf_exists(void)
++{
++	struct stat buf;
++
++	if (stat("/sbin/vlanconf", &buf) == 0)
++		return true;
++	else
++		return false;
++}
++
+ int system_init(void)
+ {
+ 	static struct event_socket rtnl_event;
+@@ -1294,6 +1306,12 @@ int system_bridge_addbr(struct device *bridge, struct bridge_config *cfg)
+ 
+ int system_macvlan_add(struct device *macvlan, struct device *dev, struct macvlan_config *cfg)
+ {
++	if(vlanconf_exists()) {
++		char cmd[256];
++		snprintf(cmd, 256, "/sbin/vlanconf create --name %s --ifname %s --type macvlan", macvlan->ifname, dev->ifname);
++		return system(cmd);
++	}
++
+ 	struct nl_msg *msg;
+ 	struct nlattr *linkinfo, *data;
+ 	struct ifinfomsg iim = { .ifi_family = AF_UNSPEC, };
+@@ -1396,6 +1414,11 @@ static int system_link_del(const char *ifname)
+ 
+ int system_macvlan_del(struct device *macvlan)
+ {
++	if(vlanconf_exists()) {
++		char cmd[256];
++		snprintf(cmd, 256, "/sbin/vlanconf delete --name %s", macvlan->ifname);
++		return system(cmd);
++	}
+ 	return system_link_del(macvlan->ifname);
+ }
+ 
+@@ -1496,20 +1519,77 @@ static int system_vlan(struct device *dev, int id)
+ 
+ int system_vlan_add(struct device *dev, int id)
+ {
++	if(vlanconf_exists()) {
++		char cmd[256];
++		snprintf(cmd, 256, "/sbin/vlanconf create --name %s.%d --ifname %s --vlan-id %d", dev->ifname, id, dev->ifname, id);
++		return system(cmd);
++	}
++
+ 	return system_vlan(dev, id);
+ }
+ 
+ int system_vlan_del(struct device *dev)
+ {
++	if(vlanconf_exists()) {
++		char cmd[256];
++		snprintf(cmd, 256, "/sbin/vlanconf delete --name %s", dev->ifname);
++		return system(cmd);
++	}
++
+ 	return system_vlan(dev, -1);
+ }
+ 
+ int system_vlandev_add(struct device *vlandev, struct device *dev, struct vlandev_config *cfg)
+ {
++	char proto[20];
++        char cmd[2048];
++        char egr_qos_map[100];
++        char ing_qos_map[100];
++        char dscp2pbit_map[1024];
++        struct vlan_qos_mapping *elem;
++
++	switch (cfg->proto) {
++	case VLAN_PROTO_UNTAGGED:
++		strcpy(proto, "untagged");
++		break;
++	case VLAN_PROTO_8021Q:
++		strcpy(proto, "8021q");
++		break;
++	case VLAN_PROTO_8021AD:
++		strcpy(proto, "8021ad");
++		break;
++	}
++
++	if(vlanconf_exists()) {
++                memset(egr_qos_map, 0, sizeof(egr_qos_map));
++                vlist_simple_for_each_element(&cfg->egress_qos_mapping_list, elem, node) {
++                         sprintf(egr_qos_map+strlen(egr_qos_map), "%d:%d ", elem->from, elem->to);
++                }
++
++                memset(ing_qos_map, 0, sizeof(ing_qos_map));
++                vlist_simple_for_each_element(&cfg->ingress_qos_mapping_list, elem, node) {
++                         sprintf(ing_qos_map+strlen(ing_qos_map), "%d:%d ", elem->from, elem->to);
++                }
++
++                memset(dscp2pbit_map, 0, sizeof(dscp2pbit_map));
++                vlist_simple_for_each_element(&cfg->dscp2pbit_mapping_list, elem, node) {
++                         sprintf(dscp2pbit_map+strlen(dscp2pbit_map), "%d:%d ", elem->from, elem->to);
++                }
++
++                memset(cmd, 0, sizeof(cmd));
++                snprintf(cmd, sizeof(cmd), "/sbin/vlanconf create --name %s --ifname %s --type %s "
++			"--vlan-id %d --translated-vlan-id %d --priority %d --inner-vlan-id %d --inner-priority %d --dscp %d "
++			"--multicast-mode %s --egress-qos-map %s --ingress-qos-map %s --dscp2pbit %s",
++				 vlandev->ifname, dev->ifname, proto,
++				 cfg->vid, cfg->tvid, cfg->priority, cfg->inner_vid, cfg->inner_priority, cfg->dscp,
++				 (cfg->mcmode == MULTICAST_MODE_ONT) ? "ont":"rg", egr_qos_map, ing_qos_map,
++				 dscp2pbit_map);
++		return system(cmd);
++	}
++
+ 	struct nl_msg *msg;
+ 	struct nlattr *linkinfo, *data, *qos;
+ 	struct ifinfomsg iim = { .ifi_family = AF_UNSPEC };
+-	struct vlan_qos_mapping *elem;
+ 	struct ifla_vlan_qos_mapping nl_qos_map;
+ 	int rv;
+ 
+@@ -1575,6 +1655,12 @@ nla_put_failure:
+ 
+ int system_vlandev_del(struct device *vlandev)
+ {
++	if(vlanconf_exists()) {
++		char cmd[256];
++		snprintf(cmd, 256, "/sbin/vlanconf delete --name %s", vlandev->ifname);
++		return system(cmd);
++	}
++
+ 	return system_link_del(vlandev->ifname);
+ }
+ 
+diff --git a/system-linux.h b/system-linux.h
+new file mode 100644
+index 0000000..6081937
+--- /dev/null
++++ b/system-linux.h
+@@ -0,0 +1,6 @@
++#ifndef __SYSTEM_LINUX_H
++#define __SYSTEM__LINUX_H
++
++bool vlanconf_exists(void);
++
++#endif
+diff --git a/system.h b/system.h
+index 52161a8..4746eac 100644
+--- a/system.h
++++ b/system.h
+@@ -167,6 +167,7 @@ struct veth_config {
+ };
+ 
+ enum vlan_proto {
++	VLAN_PROTO_UNTAGGED = 0x0,
+ 	VLAN_PROTO_8021Q = 0x8100,
+ 	VLAN_PROTO_8021AD = 0x88A8
+ };
+@@ -177,11 +178,23 @@ struct vlan_qos_mapping {
+ 	uint32_t to;
+ };
+ 
++enum iface_mode {
++	MULTICAST_MODE_RG,
++	MULTICAST_MODE_ONT,
++};
++
+ struct vlandev_config {
+ 	enum vlan_proto proto;
++	enum iface_mode mcmode;
+ 	uint16_t vid;
++	uint16_t tvid;
++	uint16_t priority;
++	uint16_t inner_vid;
++	uint16_t inner_priority;
++	uint16_t dscp;
+ 	struct vlist_simple_tree ingress_qos_mapping_list; /* list of struct vlan_qos_mapping */
+ 	struct vlist_simple_tree egress_qos_mapping_list;  /* list of struct vlan_qos_mapping */
++        struct vlist_simple_tree dscp2pbit_mapping_list;   /* list of struct vlan_qos_mapping */
+ };
+ 
+ static inline int system_get_addr_family(unsigned int flags)
+diff --git a/vlandev.c b/vlandev.c
+index 31b82b1..a0a0307 100644
+--- a/vlandev.c
++++ b/vlandev.c
+@@ -24,16 +24,30 @@
+ enum {
+ 	VLANDEV_ATTR_IFNAME,
+ 	VLANDEV_ATTR_VID,
++	VLANDEV_ATTR_TVID,
++	VLANDEV_ATTR_PRIORITY,
++	VLANDEV_ATTR_INNER_VID,
++	VLANDEV_ATTR_INNER_PRIORITY,
++	VLANDEV_ATTR_DSCP,
++	VLANDEV_ATTR_MCMODE,
+ 	VLANDEV_ATTR_INGRESS_QOS_MAPPING,
+ 	VLANDEV_ATTR_EGRESS_QOS_MAPPING,
++        VLANDEV_ATTR_DSCP2PBIT_MAPPING,
+ 	__VLANDEV_ATTR_MAX
+ };
+ 
+ static const struct blobmsg_policy vlandev_attrs[__VLANDEV_ATTR_MAX] = {
+ 	[VLANDEV_ATTR_IFNAME] = { "ifname", BLOBMSG_TYPE_STRING },
+ 	[VLANDEV_ATTR_VID] = { "vid", BLOBMSG_TYPE_STRING },
++	[VLANDEV_ATTR_TVID] = { "tvid", BLOBMSG_TYPE_INT32 },
++	[VLANDEV_ATTR_PRIORITY] = { "priority", BLOBMSG_TYPE_INT32 },
++	[VLANDEV_ATTR_INNER_VID] = { "inner_vid", BLOBMSG_TYPE_INT32 },
++	[VLANDEV_ATTR_INNER_PRIORITY] = { "inner_priority", BLOBMSG_TYPE_INT32 },
++	[VLANDEV_ATTR_DSCP] = { "dscp", BLOBMSG_TYPE_INT32 },
++	[VLANDEV_ATTR_MCMODE] = { "mcmode", BLOBMSG_TYPE_STRING },
+ 	[VLANDEV_ATTR_INGRESS_QOS_MAPPING] = { "ingress_qos_mapping", BLOBMSG_TYPE_ARRAY },
+ 	[VLANDEV_ATTR_EGRESS_QOS_MAPPING] = { "egress_qos_mapping", BLOBMSG_TYPE_ARRAY },
++        [VLANDEV_ATTR_DSCP2PBIT_MAPPING] = { "dscp2pbit", BLOBMSG_TYPE_ARRAY },
+ };
+ 
+ static const struct uci_blob_param_list vlandev_attr_list = {
+@@ -45,8 +59,12 @@ static const struct uci_blob_param_list vlandev_attr_list = {
+ };
+ 
+ static struct device_type vlan8021q_device_type;
++static struct device_type vlanuntagged_device_type;
+ static struct blob_buf b;
+ 
++const char mcmode_rg[] = "rg";
++const char mcmode_ont[] = "ont";
++
+ struct vlandev_device {
+ 	struct device dev;
+ 	struct device_user parent;
+@@ -237,6 +255,7 @@ vlandev_dump_info(struct device *dev, struct blob_buf *b)
+ 	blobmsg_add_u32(b, "vid", mvdev->config.vid);
+ 	vlandev_qos_mapping_dump(b, "ingress_qos_mapping", &mvdev->config.ingress_qos_mapping_list);
+ 	vlandev_qos_mapping_dump(b, "egress_qos_mapping", &mvdev->config.egress_qos_mapping_list);
++        vlandev_qos_mapping_dump(b, "dscp2pbit", &mvdev->config.dscp2pbit_mapping_list);
+ }
+ 
+ static uint16_t
+@@ -311,12 +330,47 @@ vlandev_apply_settings(struct vlandev_device *mvdev, struct blob_attr **tb)
+ {
+ 	struct vlandev_config *cfg = &mvdev->config;
+ 	struct blob_attr *cur;
++	const char *mode;
+ 
+ 	cfg->proto = (mvdev->dev.type == &vlan8021q_device_type) ?
+ 		VLAN_PROTO_8021Q : VLAN_PROTO_8021AD;
++	cfg->vid = 1;
++	cfg->tvid = 0;
++	cfg->priority = 0;
+ 
+ 	vlist_simple_update(&cfg->ingress_qos_mapping_list);
+ 	vlist_simple_update(&cfg->egress_qos_mapping_list);
++	vlist_simple_update(&cfg->dscp2pbit_mapping_list);
++
++	if (mvdev->dev.type == &vlanuntagged_device_type)
++		cfg->proto = VLAN_PROTO_UNTAGGED;
++
++	if ((cur = tb[VLANDEV_ATTR_VID]))
++		cfg->vid = (uint16_t) blobmsg_get_u32(cur);
++
++	if ((cur = tb[VLANDEV_ATTR_TVID]))
++		cfg->tvid = (uint16_t) blobmsg_get_u32(cur);
++
++	if ((cur = tb[VLANDEV_ATTR_PRIORITY]))
++		cfg->priority = (uint16_t) blobmsg_get_u32(cur);
++
++	if ((cur = tb[VLANDEV_ATTR_INNER_VID]))
++		cfg->inner_vid = (uint16_t) blobmsg_get_u32(cur);
++
++	if ((cur = tb[VLANDEV_ATTR_INNER_PRIORITY]))
++		cfg->inner_priority = (uint16_t) blobmsg_get_u32(cur);
++
++	if ((cur = tb[VLANDEV_ATTR_DSCP]))
++		cfg->dscp = (uint16_t) blobmsg_get_u32(cur);
++
++	if ((cur = tb[VLANDEV_ATTR_MCMODE])) {
++		mode = blobmsg_get_string(tb[VLANDEV_ATTR_MCMODE]);
++
++		if (strncmp(mode, mcmode_rg, strlen(mcmode_rg) == 0))
++			cfg->mcmode = MULTICAST_MODE_RG;
++		else if (strncmp(mode, mcmode_ont, strlen(mcmode_ont) == 0))
++			cfg->mcmode = MULTICAST_MODE_ONT;
++	}
+ 
+ 	if ((cur = tb[VLANDEV_ATTR_INGRESS_QOS_MAPPING]))
+ 		vlandev_qos_mapping_list_apply(&cfg->ingress_qos_mapping_list, cur);
+@@ -324,8 +378,12 @@ vlandev_apply_settings(struct vlandev_device *mvdev, struct blob_attr **tb)
+ 	if ((cur = tb[VLANDEV_ATTR_EGRESS_QOS_MAPPING]))
+ 		vlandev_qos_mapping_list_apply(&cfg->egress_qos_mapping_list, cur);
+ 
++	if ((cur = tb[VLANDEV_ATTR_DSCP2PBIT_MAPPING]))
++		vlandev_qos_mapping_list_apply(&cfg->dscp2pbit_mapping_list, cur);
++
+ 	vlist_simple_flush(&cfg->ingress_qos_mapping_list);
+ 	vlist_simple_flush(&cfg->egress_qos_mapping_list);
++	vlist_simple_flush(&cfg->dscp2pbit_mapping_list);
+ }
+ 
+ static enum dev_change_type
+@@ -388,6 +446,8 @@ vlandev_create(const char *name, struct device_type *devtype,
+ 			  struct vlan_qos_mapping, node);
+ 	vlist_simple_init(&mvdev->config.egress_qos_mapping_list,
+ 			  struct vlan_qos_mapping, node);
++	vlist_simple_init(&mvdev->config.dscp2pbit_mapping_list,
++			  struct vlan_qos_mapping, node);
+ 
+ 	dev = &mvdev->dev;
+ 
+@@ -430,8 +490,19 @@ static struct device_type vlan8021q_device_type = {
+ 	.dump_info = vlandev_dump_info,
+ };
+ 
++static struct device_type vlanuntagged_device_type = {
++	.name = "untagged",
++	.config_params = &vlandev_attr_list,
++	.create = vlandev_create,
++	.config_init = vlandev_config_init,
++	.reload = vlandev_reload,
++	.free = vlandev_free,
++	.dump_info = vlandev_dump_info,
++};
++
+ static void __init vlandev_device_type_init(void)
+ {
+ 	device_type_add(&vlan8021ad_device_type);
+ 	device_type_add(&vlan8021q_device_type);
++	device_type_add(&vlanuntagged_device_type);
+ }
+-- 
+2.32.0
+

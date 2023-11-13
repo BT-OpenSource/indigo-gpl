@@ -1,0 +1,14 @@
+--- a/dmtree/tr181/ieee1905.c
++++ b/dmtree/tr181/ieee1905.c
+@@ -303,6 +303,11 @@ static int browseIEEE1905ALNetworkTopologyIEEE1905DeviceIEEE1905NeighborInst(str
+ 		dmjson_foreach_obj_in_array((json_object *)prev_data, ifacearrobj, interface, i, 1, "interface") {
+ 			curr_ieee1905_neighbors_args.mac_addr = dmjson_get_value(interface, 1, "macaddress");
+ 			dmjson_foreach_obj_in_array(interface, ieee1905_neighborsarrobj, ieee1905_neighbors, j, 1, "links") {
++				bool direct = dmuci_string_to_boolean(dmjson_get_value(ieee1905_neighbors, 1, "direct"));
++
++				if (direct == false)
++					continue;
++
+ 				curr_ieee1905_neighbors_args.neighbor_device_id = dmjson_get_value(ieee1905_neighbors, 1, "ieee1905id");
+ 				curr_ieee1905_neighbors_args.num_metrics = "1";
+ 				curr_ieee1905_neighbors_args.dev_obj = ieee1905_neighbors;

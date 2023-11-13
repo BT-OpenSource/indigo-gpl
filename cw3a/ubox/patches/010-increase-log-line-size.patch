@@ -1,0 +1,11 @@
+--- a/log/syslog.h
++++ b/log/syslog.h
+@@ -14,7 +14,7 @@
+ #ifndef __SYSLOG_H
+ #define __SYSLOG_H
+ 
+-#define LOG_LINE_SIZE		1024
++#define LOG_LINE_SIZE		2048
+ 
+ enum {
+ 	SOURCE_KLOG = 0,

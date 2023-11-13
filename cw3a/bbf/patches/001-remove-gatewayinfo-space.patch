@@ -1,0 +1,13 @@
+diff --git a/dmtree/tr181/device.c b/dmtree/tr181/device.c
+index be3ba37..bb756b2 100644
+--- a/dmtree/tr181/device.c
++++ b/dmtree/tr181/device.c
+@@ -123,7 +123,7 @@ DMOBJ tDeviceObj[] = {
+ #ifdef BBF_TR104
+ {"Services", &DMREAD, NULL, NULL, NULL, NULL, NULL, NULL, tServicesObj, NULL, NULL, BBFDM_BOTH, NULL, "2.0"},
+ #endif
+-{"GatewayInfo", &DMREAD, NULL,NULL, NULL, NULL, NULL, NULL, NULL, tGatewayInfoParams, NULL, BBFDM_CWMP, NULL, "2.0"},
++{"GatewayInfo", &DMREAD, NULL, NULL, NULL, NULL, NULL, NULL, NULL, tGatewayInfoParams, NULL, BBFDM_CWMP, NULL, "2.0"},
+ {0}
+ };
+ 

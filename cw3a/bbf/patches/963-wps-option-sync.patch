@@ -1,0 +1,142 @@
+diff --git a/dmtree/tr181/wifi.c b/dmtree/tr181/wifi.c
+--- a/dmtree/tr181/wifi.c
++++ b/dmtree/tr181/wifi.c
+@@ -14,6 +14,19 @@
+ 
+ #include "wifi.h"
+ 
++#define BT_VENDOR_IE_EXT_OUI 0x0000db
++#define BT_VENDOR_IE_WPS_ENABLE_ATTR 0x65
++
++#define VENDOR_EXT_SECTION "vendor_ie"
++
++#define VENDOR_EXT_OUI_STR_MAX 6
++#define VENDOR_EXT_ATTR_STR_MAX 2
++#define VENDOR_EXT_LEN_STR_MAX 2
++#define VENDOR_EXT_DATA_STR_MAX 512
++
++#define VENDOR_EXT_STR_MAX VENDOR_EXT_OUI_STR_MAX + VENDOR_EXT_ATTR_STR_MAX + \
++    VENDOR_EXT_LEN_STR_MAX + VENDOR_EXT_DATA_STR_MAX
++
+ struct wifi_radio_args
+ {
+ 	struct dmmap_dup *sections;
+@@ -314,6 +327,52 @@
+ 	return NULL;
+ }
+ 
++void vendor_ext_add(struct uci_section *usection, uint32_t oui, uint8_t attr,
++	uint8_t len, uint8_t *data, uint8_t clean_similar)
++{
++	char *package = NULL;
++	char *section = NULL;
++	char *option = VENDOR_EXT_SECTION;
++	struct uci_list *ext_list = NULL;
++	struct uci_element *e = NULL;
++	struct uci_element *tmp = NULL;
++
++	char ext_buffer[VENDOR_EXT_STR_MAX + 1] = { 0 };
++	char *ext_str = ext_buffer;
++
++	if (usection == NULL || usection->package == NULL)
++		return;
++
++	package = usection->package->e.name;
++	section = usection->e.name;
++
++	sprintf(ext_str, "%06x%02x", oui, attr);
++	ext_str += VENDOR_EXT_OUI_STR_MAX + VENDOR_EXT_ATTR_STR_MAX;
++
++	if (clean_similar == 1) {
++		dmuci_get_option_value_list(package, section, option, &ext_list);
++
++		if (ext_list != NULL) {
++			uci_foreach_element_safe(ext_list, tmp, e) {
++				if (e == NULL)
++					break;
++
++				if (DM_STRSTR(e->name, ext_buffer) != NULL)
++					dmuci_del_list_value(package, section, option, e->name);
++			}
++		}
++	}
++
++	sprintf(ext_str, "%02x", len);
++	ext_str += VENDOR_EXT_LEN_STR_MAX;
++
++	for (uint8_t i = 0; i < len; ++i, ext_str += 2)
++		sprintf(ext_str, "%02x", data[i]);
++
++	dmuci_add_list_value(package, section, option, ext_buffer);
++}
++
++
+ /*************************************************************
+ * ADD DEL OBJ
+ **************************************************************/
+@@ -1831,6 +1890,7 @@
+ 	struct uci_section *map_ssid_s = NULL;
+ 	char *wpa_key = NULL;
+ 	char *mode = get_security_mode(section);
++	uint8_t wps = 0;
+ 
+ 	// mapcontroller config: find the corresponding fronthaul ssid section if exist
+ 	if (!is_endpoint)
+@@ -1890,6 +1950,8 @@
+ 
+ 			if (map_ssid_s) dmuci_set_value_by_section(map_ssid_s, "encryption", "wpa");
+ 		} else if (DM_LSTRCMP(value, "WPA2-Personal") == 0) {
++			wps = 1;
++
+ 			dmuci_set_value_by_section(section, "encryption", "psk2");
+ 			dmuci_set_value_by_section(section, "key", wpa_key);
+ 			dmuci_set_value_by_section(section, "wpa_group_rekey", "3600");
+@@ -1898,6 +1960,8 @@
+ 
+ 			if (map_ssid_s) dmuci_set_value_by_section(map_ssid_s, "encryption", "psk2");
+ 			if (map_ssid_s) dmuci_set_value_by_section(map_ssid_s, "key", wpa_key);
++			if (map_ssid_s) vendor_ext_add(map_ssid_s, BT_VENDOR_IE_EXT_OUI,
++				BT_VENDOR_IE_WPS_ENABLE_ATTR, 1, &wps, 1);
+ 		} else if (DM_LSTRCMP(value, "WPA2-Enterprise") == 0) {
+ 			dmuci_set_value_by_section(section, "encryption", "wpa2");
+ 			dmuci_set_value_by_section(section, "auth_port", "1812");
+@@ -1905,6 +1969,8 @@
+ 
+ 			if (map_ssid_s) dmuci_set_value_by_section(map_ssid_s, "encryption", "wpa2");
+ 		} else if (DM_LSTRCMP(value, "WPA-WPA2-Personal") == 0) {
++			wps = 1;
++
+ 			dmuci_set_value_by_section(section, "encryption", "psk-mixed");
+ 			dmuci_set_value_by_section(section, "key", wpa_key);
+ 			dmuci_set_value_by_section(section, "wpa_group_rekey", "3600");
+@@ -1912,6 +1978,8 @@
+ 
+ 			if (map_ssid_s) dmuci_set_value_by_section(map_ssid_s, "encryption", "psk-mixed");
+ 			if (map_ssid_s) dmuci_set_value_by_section(map_ssid_s, "key", wpa_key);
++			if (map_ssid_s) vendor_ext_add(map_ssid_s, BT_VENDOR_IE_EXT_OUI,
++				BT_VENDOR_IE_WPS_ENABLE_ATTR, 1, &wps, 1);
+ 		} else if (DM_LSTRCMP(value, "WPA-WPA2-Enterprise") == 0) {
+ 			dmuci_set_value_by_section(section, "encryption", "wpa-mixed");
+ 			dmuci_set_value_by_section(section, "auth_port", "1812");
+@@ -2268,6 +2336,10 @@
+ static int set_WiFiAccessPointWPS_Enable(char *refparam, struct dmctx *ctx, void *data, char *instance, char *value, int action)
+ {
+ 	bool b;
++	struct uci_section *map_ssid_s = NULL;
++	uint8_t wps = 0;
++
++	map_ssid_s = find_mapcontroller_ssid_section((((struct wifi_acp_args *)data)->sections)->config_section);
+ 
+ 	switch (action)	{
+ 		case VALUECHECK:
+@@ -2277,6 +2349,10 @@
+ 		case VALUESET:
+ 			string_to_bool(value, &b);
+ 			dmuci_set_value_by_section((((struct wifi_acp_args *)data)->sections)->config_section, "wps", b ? "1" : "0");
++			wps = b ? 1 : 0;
++			if (map_ssid_s) vendor_ext_add(map_ssid_s, BT_VENDOR_IE_EXT_OUI,
++				BT_VENDOR_IE_WPS_ENABLE_ATTR, 1, &wps, 1);
++
+ 			break;
+ 	}
+ 	return 0;

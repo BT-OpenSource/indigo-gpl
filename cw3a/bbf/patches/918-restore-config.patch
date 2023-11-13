@@ -1,0 +1,106 @@
+diff --git a/dmdiagnostics.c b/dmdiagnostics.c
+index d69c661..e82f253 100644
+--- a/dmdiagnostics.c
++++ b/dmdiagnostics.c
+@@ -433,6 +433,46 @@ end:
+ 	return res;
+ }
+ 
++static long download_file_bt(const char* filename, const char *url)
++{
++	long res_code = 0;
++	char *client_cert, *client_key, *ca;
++
++	dmuci_get_option_value_string("uspd", "usp", "client_cert", &client_cert);
++	dmuci_get_option_value_string("uspd", "usp", "client_key", &client_key);
++	dmuci_get_option_value_string("uspd", "usp", "ca", &ca);
++
++	if(client_cert[0] == '\0' || client_key[0] == '\0' || ca[0] == '\0')
++		return -1;
++
++	CURL *curl_handle;
++
++	curl_handle = curl_easy_init();
++	if(!curl_handle) {
++		return -1;
++	}
++
++	curl_easy_setopt(curl_handle, CURLOPT_URL, url);
++	curl_easy_setopt(curl_handle, CURLOPT_CAINFO, client_cert);
++	curl_easy_setopt(curl_handle, CURLOPT_SSLCERT, client_cert);
++	curl_easy_setopt(curl_handle, CURLOPT_SSLKEY, client_key);
++	curl_easy_setopt(curl_handle, CURLOPT_CAINFO, ca);
++	curl_easy_setopt(curl_handle, CURLOPT_SSL_VERIFYPEER, false);
++	curl_easy_setopt(curl_handle, CURLOPT_SSL_VERIFYHOST, false);
++
++	FILE *fp = fopen(filename, "wb");
++	if (fp) {
++		curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, fp);
++		curl_easy_perform(curl_handle);
++		fclose(fp);
++	}
++
++	curl_easy_getinfo(curl_handle, CURLINFO_RESPONSE_CODE, &res_code);
++	curl_easy_cleanup(curl_handle);
++
++	return res_code;
++}
++
+ int bbf_upload_log(const char *url, const char *username, const char *password,
+                 char *config_name, const char *command, const char *obj_path)
+ {
+@@ -468,7 +508,14 @@ int bbf_config_restore(const char *url, const char *username, const char *passwo
+ 
+ 	// Download the firmware image
+ 	time_t start_time = time(NULL);
+-	long res_code = download_file(config_restore, url, username, password);
++	long res_code = 0;
++	if ((username && password) && (strlen(username) && strlen(password))){
++		res_code = download_file(config_restore, url, username, password);
++	}
++	else {
++		res_code = download_file_bt(config_restore, url);
++	}
++
+ 	time_t complete_time = time(NULL);
+ 
+ 	// Send Transfer Complete Event
+@@ -487,14 +534,20 @@ int bbf_config_restore(const char *url, const char *username, const char *passwo
+ 	}
+ 
+ 	// Apply config file
+-	if (dmuci_import(NULL, config_restore))
++	if (dmuci_import(NULL, config_restore)) {
+ 		res = -1;
++		goto end;
++	}
++
++	if (dmubus_call_set("uci", "reload_config", UBUS_ARGS{}, 0)) {
++		res = -1;
++		goto end;
++	}
+ 
+ end:
+ 	// Remove temporary file
+ 	if (file_exists(config_restore) && strncmp(url, FILE_URI, strlen(FILE_URI)) && remove(config_restore))
+ 		res = -1;
+-
+ 	return res;
+ }
+ 
+@@ -515,7 +568,14 @@ int bbf_fw_image_download(const char *url, const char *auto_activate, const char
+ 
+ 	// Download the firmware image
+ 	time_t start_time = time(NULL);
+-	long res_code = download_file(fw_image_path, url, username, password);
++	long res_code = 0;
++	if ((username && password) && (strlen(username) && strlen(password))){
++		res_code = download_file(fw_image_path, url, username, password);
++	}
++	else {
++		res_code = download_file_bt(fw_image_path, url);
++	}
++
+ 	time_t complete_time = time(NULL);
+ 
+ 	// Send Transfer Complete Event

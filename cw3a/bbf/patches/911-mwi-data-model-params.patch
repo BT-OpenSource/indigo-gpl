@@ -1,0 +1,51 @@
+Index: libbbfdm-6.4.7/dmtree/tr104/servicesvoiceservicecallcontrol.c
+===================================================================
+--- libbbfdm-6.4.7.orig/dmtree/tr104/servicesvoiceservicecallcontrol.c
++++ libbbfdm-6.4.7/dmtree/tr104/servicesvoiceservicecallcontrol.c
+@@ -1321,6 +1321,37 @@ static int set_ServicesVoiceServiceCallC
+ 	return 0;
+ }
+ 
++/*#Device.Services.VoiceService.{i}.CallControl.CallingFeatures.Set.{i}.VMWIEnable!UCI:asterisk/calling_features/vmwi_enable*/
++static int get_ServicesVoiceServiceCallControlCallingFeaturesSet_VMWIEnable(char *refparam, struct dmctx *ctx, void *data, char *instance, char **value)
++{
++	dmuci_get_value_by_section_string(((struct dmmap_dup *)data)->config_section, "vmwi_enable", value);
++	return 0;
++}
++
++static int set_ServicesVoiceServiceCallControlCallingFeaturesSet_VMWIEnable(char *refparam, struct dmctx *ctx, void *data, char *instance, char *value, int action)
++{
++	bool b;
++
++	switch (action) {
++		case VALUECHECK:
++			if (dm_validate_boolean(value))
++				return FAULT_9007;
++			break;
++		case VALUESET:
++			string_to_bool(value, &b);
++			dmuci_set_value_by_section(((struct dmmap_dup *)data)->config_section, "vmwi_enable", b ? "1" : "0");
++			break;
++	}
++	return 0;
++}
++
++/*#Device.Services.VoiceService.{i}.CallControl.CallingFeatures.Set.LineMessagesWaiting!UCI:asterisk/advanced_features,call_features/line_messages_waiting*/
++static int get_ServicesVoiceServiceCallControlCallingFeaturesSet_LineMessagesWaiting(char *refparam, struct dmctx *ctx, void *data, char *instance, char **value)
++{
++	dmuci_get_value_by_section_string(((struct dmmap_dup *)data)->config_section, "line_messages_waiting", value);
++	return 0;
++}
++
+ /*#Device.Services.VoiceService.{i}.CallControl.CallingFeatures.Set.{i}.AnonymousCallEnable!UCI:asterisk/calling_features/anonymous_call_enable*/
+ static int get_ServicesVoiceServiceCallControlCallingFeaturesSet_AnonymousCallEnable(char *refparam, struct dmctx *ctx, void *data, char *instance, char **value)
+ {
+@@ -1617,6 +1648,8 @@ DMLEAF tServicesVoiceServiceCallControlC
+ {"CallForwardOnBusyEnable", &DMWRITE, DMT_BOOL, get_ServicesVoiceServiceCallControlCallingFeaturesSet_CallForwardOnBusyEnable, set_ServicesVoiceServiceCallControlCallingFeaturesSet_CallForwardOnBusyEnable, BBFDM_BOTH},
+ {"CallForwardOnNoAnswerEnable", &DMWRITE, DMT_BOOL, get_ServicesVoiceServiceCallControlCallingFeaturesSet_CallForwardOnNoAnswerEnable, set_ServicesVoiceServiceCallControlCallingFeaturesSet_CallForwardOnNoAnswerEnable, BBFDM_BOTH},
+ {"MWIEnable", &DMWRITE, DMT_BOOL, get_ServicesVoiceServiceCallControlCallingFeaturesSet_MWIEnable, set_ServicesVoiceServiceCallControlCallingFeaturesSet_MWIEnable, BBFDM_BOTH},
++{"VMWIEnable", &DMWRITE, DMT_BOOL, get_ServicesVoiceServiceCallControlCallingFeaturesSet_VMWIEnable, set_ServicesVoiceServiceCallControlCallingFeaturesSet_VMWIEnable, BBFDM_BOTH},
++{"LineMessagesWaiting", &DMREAD, DMT_UNINT, get_ServicesVoiceServiceCallControlCallingFeaturesSet_LineMessagesWaiting, NULL, BBFDM_BOTH},
+ {"AnonymousCallEnable", &DMWRITE, DMT_BOOL, get_ServicesVoiceServiceCallControlCallingFeaturesSet_AnonymousCallEnable, set_ServicesVoiceServiceCallControlCallingFeaturesSet_AnonymousCallEnable, BBFDM_BOTH},
+ {"DoNotDisturbEnable", &DMWRITE, DMT_BOOL, get_ServicesVoiceServiceCallControlCallingFeaturesSet_DoNotDisturbEnable, set_ServicesVoiceServiceCallControlCallingFeaturesSet_DoNotDisturbEnable, BBFDM_BOTH},
+ {"VoiceMailEnable", &DMWRITE, DMT_BOOL, get_ServicesVoiceServiceCallControlCallingFeaturesSet_VoiceMailEnable, set_ServicesVoiceServiceCallControlCallingFeaturesSet_VoiceMailEnable, BBFDM_BOTH},

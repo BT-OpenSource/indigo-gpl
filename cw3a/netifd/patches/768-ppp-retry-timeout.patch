@@ -1,0 +1,211 @@
+diff -aur a/config.c b/config.c
+--- a/config.c	2022-09-01 19:25:04.443058695 +0530
++++ b/config.c	2022-10-17 19:19:57.176948028 +0530
+@@ -934,3 +934,13 @@
+ 
+ 	return ret;
+ }
++
++struct uci_package* get_uci_network()
++{
++    return (uci_network?uci_network:NULL);
++}
++
++struct uci_context *get_uci_ctx()
++{
++    return (uci_ctx?uci_ctx:NULL);
++}
+diff -aur a/config.h b/config.h
+--- a/config.h	2022-09-01 19:25:04.443058695 +0530
++++ b/config.h	2022-09-01 19:16:19.335620347 +0530
+@@ -24,4 +24,8 @@
+ bool config_is_device_present(const char *name);
+ 
+ void config_init_proto(const char *ifname);
++
++struct uci_package* get_uci_network();
++struct uci_context *get_uci_ctx();
++
+ #endif
+diff -aur a/proto-shell.c b/proto-shell.c
+--- a/proto-shell.c	2022-09-01 19:25:23.274901398 +0530
++++ b/proto-shell.c	2022-10-17 09:54:40.563124801 +0530
+@@ -22,6 +22,7 @@
+ #include <arpa/inet.h>
+ #include <netinet/in.h>
+ 
++#include <uci.h>
+ 
+ #include "netifd.h"
+ #include "interface.h"
+@@ -30,6 +31,8 @@
+ #include "system.h"
+ #include "handler.h"
+ 
++#define PPP_RETRY_INTERVAL  "ppp_retry_interval"
++#define IFACE_NAME_WAN		"wan"
+ static int proto_fd = -1;
+ 
+ enum proto_shell_sm {
+@@ -78,6 +81,9 @@
+ 	int checkup_interval;
+ 	struct uloop_timeout checkup_timeout;
+ 
++	int proto_retry_interval;
++	struct uloop_timeout proto_retry_timeout;
++
+ 	struct netifd_process script_task;
+ 	struct netifd_process proto_task;
+ 
+@@ -90,6 +96,8 @@
+ 	struct list_head deps;
+ };
+ 
++static int get_ppp_retry_interval();
++
+ static void kill_pid_and_wait(pid_t pid, unsigned int signal)
+ {
+ 	pid_t rc_pid = 0;
+@@ -180,6 +188,37 @@
+ 	}
+ }
+ 
++static void
++proto_retry_timeout_cb(struct uloop_timeout *timeout)
++{
++	struct proto_shell_state *state = container_of(timeout, struct
++			proto_shell_state, proto_retry_timeout);
++	struct interface_proto_state *proto = &state->proto;
++
++	struct proto_shell_handler *handler;
++	struct netifd_process *proc;
++	int i = 0;
++	const char *argv[7];
++	char *config;
++	const char *action = "setup";
++	handler = state->handler;
++	proc = &state->script_task;
++	argv[i++] = handler->script_name;
++	argv[i++] = handler->proto.name;
++	argv[i++] = action;
++	argv[i++] = proto->iface->name;
++	config = blobmsg_format_json(state->config, true);
++	argv[i++] = config;
++	if (proto->iface->main_dev.dev)
++		argv[i++] = proto->iface->main_dev.dev->ifname;
++	argv[i] = NULL;
++	if(state->sm != S_SETUP){
++		netifd_log_message(L_DEBUG,"%s:%d No need to restart ppp. Just return.", __func__, __LINE__);
++		return;
++	}    
++	netifd_start_process(argv, NULL, proc);
++}
++
+ static int
+ proto_shell_handler(struct interface_proto_state *proto,
+ 		    enum interface_proto_cmd cmd, bool force)
+@@ -269,7 +308,23 @@
+ 	argv[i] = NULL;
+ 	envp[j] = NULL;
+ 
+-	ret = netifd_start_process(argv, envp, proc);
++	if(!strcmp(proto->iface->name, IFACE_NAME_WAN) && !strcmp(action, "setup")){
++		int n = uloop_timeout_remaining(&state->proto_retry_timeout);
++		netifd_log_message(L_DEBUG, "%s:%d Remaining msec = %d", __func__, __LINE__, n);
++		
++		if(n == -1){
++			uloop_timeout_set(&state->proto_retry_timeout, (state->proto_retry_interval)*1000);
++			ret = 0;
++		}
++		else if(n>0){
++			uloop_timeout_cancel(&state->proto_retry_timeout);
++			ret = netifd_start_process(argv, envp, proc);
++		}
++		state->proto_retry_interval = get_ppp_retry_interval();//for next time.
++	}
++	else{
++		ret = netifd_start_process(argv, envp, proc);
++	}
+ 	free(config);
+ 
+ 	return ret;
+@@ -350,6 +405,7 @@
+ 		/* completed aborting all tasks, now idle */
+ 		uloop_timeout_cancel(&state->teardown_timeout);
+ 		uloop_timeout_cancel(&state->checkup_timeout);
++		uloop_timeout_cancel(&state->proto_retry_timeout);
+ 		state->sm = S_IDLE;
+ 		proto_shell_handler(&state->proto, PROTO_CMD_TEARDOWN, false);
+ 		break;
+@@ -367,6 +423,7 @@
+ 		/* completed tearing down all tasks, now idle */
+ 		uloop_timeout_cancel(&state->teardown_timeout);
+ 		uloop_timeout_cancel(&state->checkup_timeout);
++		uloop_timeout_cancel(&state->proto_retry_timeout);
+ 		state->sm = S_IDLE;
+ 		state->proto.proto_event(&state->proto, IFPEV_DOWN);
+ 		break;
+@@ -415,6 +472,7 @@
+ 	state = container_of(proto, struct proto_shell_state, proto);
+ 	uloop_timeout_cancel(&state->teardown_timeout);
+ 	uloop_timeout_cancel(&state->checkup_timeout);
++	uloop_timeout_cancel(&state->proto_retry_timeout);
+ 	proto_shell_clear_host_dep(state);
+ 	netifd_kill_process(&state->script_task);
+ 	netifd_kill_process(&state->proto_task);
+@@ -876,6 +934,43 @@
+ 	}
+ }
+ 
++static int get_ppp_retry_interval()
++{
++    struct uci_package *uci_network;
++    struct uci_element *e;
++    struct uci_section *s;
++    struct uci_context *ctx = NULL;
++    const char* interval= NULL;
++    int retry_interval = -1;
++    uci_network = get_uci_network();
++    if(!uci_network)
++        return 0;
++
++    ctx = get_uci_ctx();
++    if(!ctx)
++        return 0;
++
++    uci_foreach_element(&uci_network->sections, e)
++    {
++        s = uci_to_section(e);
++        if (!strcmp(s->type, "interface")) {
++            if(!strcmp(s->e.name, IFACE_NAME_WAN))
++            {   
++                interval = uci_lookup_option_string(ctx, s, PPP_RETRY_INTERVAL);
++                if(!interval){
++                    netifd_log_message(L_DEBUG, "%s:%d ppp_retry_interval option not found", __func__, __LINE__);
++                    retry_interval = 0;
++                }
++                else
++                    retry_interval = atoi(interval);
++               
++                break;
++            }
++        }
++    }
++    return retry_interval;
++}
++
+ static struct interface_proto_state *
+ proto_shell_attach(const struct proto_handler *h, struct interface *iface,
+ 		   struct blob_attr *attr)
+@@ -905,7 +1000,10 @@
+ 	state->proto_task.dir_fd = proto_fd;
+ 	state->proto_task.log_prefix = iface->name;
+ 	state->handler = container_of(h, struct proto_shell_handler, proto);
+-
++	if(!strcmp(iface->name, IFACE_NAME_WAN)){
++		state->proto_retry_interval = 0;
++		state->proto_retry_timeout.cb = proto_retry_timeout_cb;
++	}
+ 	return &state->proto;
+ 
+ error:

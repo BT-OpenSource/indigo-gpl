@@ -1,0 +1,45 @@
+commit b6eb7cc3215054acb3fc96f353c3eb937d4d31b4
+Author: Feten Besbes <feten.besbes@genexis.eu>
+Date:   Fri Nov 18 03:09:55 2022 +0000
+
+    DeviceInfo: Added CID, PEN, ModelNumber
+
+diff --git a/dmtree/tr181/deviceinfo.c b/dmtree/tr181/deviceinfo.c
+index 11687f5..b3c95b0 100644
+--- a/dmtree/tr181/deviceinfo.c
++++ b/dmtree/tr181/deviceinfo.c
+@@ -717,6 +717,24 @@ static int get_DeviceInfo_FirmwareImageNumberOfEntries(char *refparam, struct dm
+ 	return 0;
+ }
+ 
++static int get_deviceinfo_cid (char *refparam, struct dmctx *ctx, void *data, char *instance, char **value)
++{
++	db_get_value_string("device", "deviceinfo", "CID", value);
++	return 0;
++}
++
++static int get_deviceinfo_pen (char *refparam, struct dmctx *ctx, void *data, char *instance, char **value)
++{
++	db_get_value_string("device", "deviceinfo", "PEN", value);
++	return 0;
++}
++
++static int get_deviceinfo_modelnumber (char *refparam, struct dmctx *ctx, void *data, char *instance, char **value)
++{
++	db_get_value_string("device", "deviceinfo", "ModelNumber", value);
++	return 0;
++}
++
+ static int get_vcf_name(char *refparam, struct dmctx *ctx, void *data, char *instance, char **value)
+ {
+ 	dmuci_get_value_by_section_string((struct uci_section *)data, "name", value);
+@@ -1497,6 +1515,9 @@ DMLEAF tDeviceInfoParams[] = {
+ {"VendorConfigFileNumberOfEntries", &DMREAD, DMT_UNINT, get_DeviceInfo_VendorConfigFileNumberOfEntries, NULL, BBFDM_BOTH, "2.0"},
+ {"SupportedDataModelNumberOfEntries", &DMREAD, DMT_UNINT, get_DeviceInfo_SupportedDataModelNumberOfEntries, NULL, BBFDM_CWMP, "2.0"},
+ {"FirmwareImageNumberOfEntries", &DMREAD, DMT_UNINT, get_DeviceInfo_FirmwareImageNumberOfEntries, NULL, BBFDM_BOTH, "2.12"},
++{"CID", &DMREAD, DMT_STRING, get_deviceinfo_cid, NULL, BBFDM_USP, "2.12"},
++{"PEN", &DMREAD, DMT_STRING, get_deviceinfo_pen, NULL, BBFDM_USP, "2.12"},
++{"ModelNumber", &DMREAD, DMT_STRING, get_deviceinfo_modelnumber, NULL, BBFDM_BOTH, "2.12"},
+ {0}
+ };
+ 
