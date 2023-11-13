@@ -1,0 +1,43 @@
+From a1faf79482c7dce5c022ded1f92550707d702a1d Mon Sep 17 00:00:00 2001
+From: Adrian Frances <adrian.frances@netduma.com>
+Date: Wed, 11 Aug 2021 17:21:41 +0100
+Subject: [PATCH] ubusd: fix disconnection when sending invalid fd
+
+According to man 7 unix, sendmsg returns EBADF when sending an
+invalid file descriptor as ancillary data. The patch avois ubus
+disconnecting the client when EBADF is received for the mentioned
+case.
+
+Signed-off-by: Adrian Frances <adrian.frances@netduma.com>
+---
+ ubusd_main.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/ubusd_main.c b/ubusd_main.c
+index d454b1a..35e51e7 100644
+--- a/ubusd_main.c
++++ b/ubusd_main.c
+@@ -12,6 +12,7 @@
+ #endif
+ #include <string.h>
+ #include <syslog.h>
++#include <fcntl.h>
+ 
+ #include <libubox/usock.h>
+ 
+@@ -67,6 +68,12 @@ static void client_cb(struct uloop_fd *sock, unsigned int events)
+ 			case EINTR:
+ 			case EAGAIN:
+ 				break;
++			case EBADF:
++				if(fcntl(sock->fd, F_GETFD) != -1) {
++					cl->txq_ofs = 0;
++					ubus_msg_list_free(ubl);
++					continue;
++				}
+ 			default:
+ 				goto disconnect;
+ 			}
+-- 
+2.25.1
+

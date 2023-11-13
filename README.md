@@ -6,5 +6,8 @@ The structure of the releases are patchsets associated with the packages. These 
 ## Platforms
 Indigo supports multiple platforms, and the patchsets are separated by platform, even though many packages are common across all platforms
 
-Enjoy
+* [SH3B](sh3b/OPENSOURCE.md)
+* [CW3A](cw3a/OPENSOURCE.md)
+
+Enjoy<br>
 The BT Indigo Team

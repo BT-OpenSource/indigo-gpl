@@ -1,0 +1,13 @@
+diff --git a/dmtree/tr181/nat.c b/dmtree/tr181/nat.c
+index df1aab0..4f03eb0 100644
+--- a/dmtree/tr181/nat.c
++++ b/dmtree/tr181/nat.c
+@@ -278,7 +278,7 @@ static int set_nat_interface_setting_interface(char *refparam, struct dmctx *ctx
+ /*#Device.NAT.PortMapping.{i}.Enable!UCI:firewall/redirect,@i-1/enabled*/
+ static int get_nat_port_mapping_enable(char *refparam, struct dmctx *ctx, void *data, char *instance, char **value)
+ {
+-	*value = dmuci_get_value_by_section_fallback_def(((struct dmmap_dup *)data)->dmmap_section, "enabled", "1");
++	*value = dmuci_get_value_by_section_fallback_def(((struct dmmap_dup *)data)->config_section, "enabled", "1");
+ 	return 0;
+ }
+ 

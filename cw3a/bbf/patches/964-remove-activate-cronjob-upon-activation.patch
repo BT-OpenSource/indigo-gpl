@@ -1,0 +1,13 @@
+diff --git a/scripts/bbf_activate_handler.sh b/scripts/bbf_activate_handler.sh
+index 06d3eca54..cb8885e2f 100755
+--- a/scripts/bbf_activate_handler.sh
++++ b/scripts/bbf_activate_handler.sh
+@@ -27,6 +27,8 @@ activate_and_reboot_device() {
+ 		exit 1
+ 	fi
+
++	REMOVE_CRONJOB="/rom/etc/uci-defaults/101-remove-bbf-activate-handler-crontab.sh"
++	[ -r "$REMOVE_CRONJOB" ] && sh "$REMOVE_CRONJOB"
+ 	log "The device will restart after a few seconds"
+ 	ubus call rpc-sys reboot
+ 	exit 0

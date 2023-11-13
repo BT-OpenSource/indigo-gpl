@@ -1,0 +1,12 @@
+diff -aur a/src/get_helper.c b/src/get_helper.c
+--- a/src/get_helper.c	2022-10-10 17:09:49.362542581 +0530
++++ b/src/get_helper.c	2022-10-11 11:35:32.361899767 +0530
+@@ -41,7 +41,7 @@
+ 	struct uloop_timeout trans_timeout;
+ 	int timeout_ms;
+ 	char app[10];
+-} g_current_trans = {.trans_id=0, .timeout_ms=10000};
++} g_current_trans = {.trans_id=0, .timeout_ms=20000};
+ 
+ static const char * const operations[] = {
+ 	[OPER_EQUAL_EQUAL] = "==",

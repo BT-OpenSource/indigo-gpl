@@ -1,0 +1,27 @@
+diff --git a/dmtree/tr181/wifi.c b/dmtree/tr181/wifi.c
+index c22a948..299189f 100644
+--- a/dmtree/tr181/wifi.c
++++ b/dmtree/tr181/wifi.c
+@@ -4865,14 +4865,20 @@ static int get_WiFiDataElementsNetworkDeviceRadioBSSSTA_HECapabilities(char *ref
+ /*#Device.WiFi.DataElements.Network.Device.{i}.Radio.{i}.BSS.{i}.STA.{i}.LastDataDownlinkRate!UBUS:wifi.dataelements.collector/dump//data[0].wfa-dataelements:Network.DeviceList[@i-1].RadioList[@i-1].BSSList[@i-1].STAList[@i-1].LastDataDownlinkRate*/
+ static int get_WiFiDataElementsNetworkDeviceRadioBSSSTA_LastDataDownlinkRate(char *refparam, struct dmctx *ctx, void *data, char *instance, char **value)
+ {
+-	*value = dmjson_get_value((json_object *)data, 1, "LastDataDownlinkRate");
++	char *rate_mbps = dmjson_get_value((json_object *)data, 1, "LastDataDownlinkRate");
++	float rate_kbps = (rate_mbps && *rate_mbps != '\0') ? atof(rate_mbps) * 1000 : 1000;
++
++	dmasprintf(value, "%u", (unsigned int)rate_kbps);
+ 	return 0;
+ }
+ 
+ /*#Device.WiFi.DataElements.Network.Device.{i}.Radio.{i}.BSS.{i}.STA.{i}.LastDataUplinkRate!UBUS:wifi.dataelements.collector/dump//data[0].wfa-dataelements:Network.DeviceList[@i-1].RadioList[@i-1].BSSList[@i-1].STAList[@i-1].LastDataUplinkRate*/
+ static int get_WiFiDataElementsNetworkDeviceRadioBSSSTA_LastDataUplinkRate(char *refparam, struct dmctx *ctx, void *data, char *instance, char **value)
+ {
+-	*value = dmjson_get_value((json_object *)data, 1, "LastDataUplinkRate");
++	char *rate_mbps = dmjson_get_value((json_object *)data, 1, "LastDataUplinkRate");
++	float rate_kbps = (rate_mbps && *rate_mbps != '\0') ? atof(rate_mbps) * 1000 : 1000;
++
++	dmasprintf(value, "%u", (unsigned int)rate_kbps);
+ 	return 0;
+ }
+ 
