@@ -1,0 +1,23 @@
+--- a/dmtree/tr181/wifi.c
++++ b/dmtree/tr181/wifi.c
+@@ -720,9 +720,14 @@ static json_object *find_radio_object(json_object *device_obj, const char *uniqu
+ 		char mac[32] = {0};
+ 		char *id = dmjson_get_value(radio_obj, 1, "ID");
+ 		char *str = base64_decode(id);
+-		string_to_mac(str, DM_STRLEN(str), mac, sizeof(mac));
+-		if (DM_STRCMP(unique_key, mac) == 0)
+-			return radio_obj;
++
++		/* Cant use strlen on byte array that might genuinely include 0x00 */
++		/* but to get 6 bytes, need 8 input BASE64 chars - check for that */
++		if ((str != NULL) && (DM_STRLEN(id) == 8)) {
++			string_to_mac(str, 6, mac, sizeof(mac));
++			if (DM_STRCMP(unique_key, mac) == 0)
++				return radio_obj;
++		}
+ 	}
+ 
+ 	return NULL;
+-- 
+2.25.1
+

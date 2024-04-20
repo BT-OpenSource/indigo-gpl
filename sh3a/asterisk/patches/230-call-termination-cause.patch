@@ -1,0 +1,113 @@
+--- a/cdr/cdr_csv.c
++++ b/cdr/cdr_csv.c
+@@ -279,6 +279,8 @@ static int build_csv_record(char *buf, s
+ 	append_string(buf, cdr->farEndIPAddress, bufsize);
+ 	/* Sip Response Code */
+ 	append_int(buf, cdr->sipResponseCode, bufsize);
++	/* the call was terminated by a local user */
++	append_int(buf, cdr->local_disconnect, bufsize);
+ 	/* codec */
+ 	append_string(buf, cdr->codec, bufsize);
+ 
+--- a/channels/chan_brcm.c
++++ b/channels/chan_brcm.c
+@@ -3272,6 +3272,9 @@ static void brcm_process_event(struct en
+ 			} else if (sub->channel_state == RINGBACK) {
+ 				/* Outgoing unanswered call - rtp stats need to be collected */
+ 				brcm_getRtpStats(owner);
++			} else if (sub->channel_state == INCALL && owner) {
++				ast_channel_local_disconnect_set (owner, 1);
++				ast_debug(3, "CallTerminationCause: LocalDisconnect detected\n");
+ 			}
+ 
+ 			sub->channel_state = ONHOOK;
+--- a/include/asterisk/channel.h
++++ b/include/asterisk/channel.h
+@@ -4424,6 +4424,8 @@ const char *ast_channel_farEndIPAddress(
+ void ast_channel_farEndIPAddress_set(struct ast_channel *chan, const char *value, size_t size);
+ unsigned int ast_channel_sipResponseCode(const struct ast_channel *chan);
+ void ast_channel_sipResponseCode_set(struct ast_channel *chan, unsigned int value);
++unsigned int ast_channel_local_disconnect_get(const struct ast_channel *chan);
++void ast_channel_local_disconnect_set(struct ast_channel *chan, unsigned int value);
+ struct ast_channel_snapshot *ast_channel_snapshot(const struct ast_channel *chan);
+ void ast_channel_snapshot_set(struct ast_channel *chan, struct ast_channel_snapshot *snapshot);
+ struct ast_flags *ast_channel_snapshot_segment_flags(struct ast_channel *chan);
+--- a/main/channel_internal_api.c
++++ b/main/channel_internal_api.c
+@@ -186,6 +186,7 @@ struct ast_channel {
+ 	unsigned int fout;				/*!< Frames out counters. The high bit is a debug mask, so
+ 							 *   the counter is only in the remaining bits */
+ 	int hangupcause;				/*!< Why is the channel hanged up. See causes.h */
++	unsigned int local_disconnect:1;
+ 	unsigned int finalized:1;       /*!< Whether or not the channel has been successfully allocated */
+ 	struct ast_flags flags;				/*!< channel flags of AST_FLAG_ type */
+ 	int alertpipe[2];
+@@ -844,6 +845,15 @@ void ast_channel_sipResponseCode_set(str
+ 	chan->sipResponseCode = value;
+ }
+ 
++unsigned int ast_channel_local_disconnect_get(const struct ast_channel *chan)
++{
++	return chan->local_disconnect;
++}
++void ast_channel_local_disconnect_set(struct ast_channel *chan, unsigned int value)
++{
++	chan->local_disconnect = value;
++}
++
+ const char *ast_channel_codec_get(const struct ast_channel *chan)
+ {
+ 	return chan->codec;
+--- a/include/asterisk/cdr.h
++++ b/include/asterisk/cdr.h
+@@ -358,6 +358,8 @@ struct ast_cdr {
+ 	char farEndIPAddress[40];
+ 	/*! Sip Response Code */
+ 	int sipResponseCode;
++	/*! the call was terminated by a local user */
++	int local_disconnect;
+ 	/*! codec */
+ 	char codec[40];
+ 	/*! RTP Statistics */
+--- a/include/asterisk/stasis_channels.h
++++ b/include/asterisk/stasis_channels.h
+@@ -161,6 +161,7 @@ struct ast_channel_snapshot {
+ 	char sipIpAddress[40];                            /*!< SIP IP Address */
+ 	char farEndIPAddress[40];                         /*!< Far End IP Address */
+ 	unsigned int sipResponseCode;                     /*!< SIP Response Code for Invite */
++	unsigned int local_disconnect;                    /*!< the call was terminated by a local user */
+ 	char codec[40];                                   /*!< Codec used */
+ 	rtp_statistics *rtp_stats;                        /*!< Rtp statistics */
+ };
+--- a/main/cdr.c
++++ b/main/cdr.c
+@@ -1350,6 +1350,9 @@ static struct ast_cdr *cdr_object_create
+ 			cdr_copy->sipResponseCode = party_a->sipResponseCode;
+ 
+ 		}
++
++		cdr_copy->local_disconnect = party_a->local_disconnect;
++
+ 		if (ast_strlen_zero(cdr_copy->codec) && !ast_strlen_zero(party_a->codec)) {
+ 			ast_copy_string(cdr_copy->codec, party_a->codec, sizeof(cdr_copy->codec));
+ 		}
+@@ -1383,6 +1386,8 @@ static struct ast_cdr *cdr_object_create
+ 				cdr_copy->sipResponseCode = party_b->sipResponseCode;
+ 			}
+ 
++			cdr_copy->local_disconnect |= party_b->local_disconnect;
++
+ 			if (ast_strlen_zero(cdr_copy->codec) && !ast_strlen_zero(party_b->codec)) {
+ 				ast_copy_string(cdr_copy->codec, party_b->codec, sizeof(cdr_copy->codec));
+ 			}
+--- a/main/stasis_channels.c
++++ b/main/stasis_channels.c
+@@ -556,6 +556,8 @@ struct ast_channel_snapshot *ast_channel
+ 	ast_copy_string(snapshot->sipIpAddress, ast_channel_sipIpAddress(chan), sizeof(snapshot->sipIpAddress));
+ 	ast_copy_string(snapshot->farEndIPAddress, ast_channel_farEndIPAddress(chan), sizeof(snapshot->farEndIPAddress));
+ 	snapshot->sipResponseCode = ast_channel_sipResponseCode(chan);
++	snapshot->local_disconnect = ast_channel_local_disconnect_get(chan);
++
+ 	ast_copy_string(snapshot->codec, ast_channel_codec_get(chan), sizeof(snapshot->codec));
+ 	snapshot->rtp_stats = ast_channel_rtpStats_get(chan);
+ 

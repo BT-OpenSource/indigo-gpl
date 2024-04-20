@@ -1,0 +1,46 @@
+--- a/res/res_pjsip_outbound_registration.c
++++ b/res/res_pjsip_outbound_registration.c
+@@ -926,37 +926,14 @@ static int sip_outbound_registration_is_
+ 	}
+ }
+ 
+-static int sip_outbound_registration_send_ubus_event(char *ev_name,int time ,char *client)
++static void sip_outbound_registration_send_ubus_event(char *ev_name,int time ,char *client)
+ {
+-	struct blob_buf blob;
+-	int res = 0;
+-	struct ubus_context *ubusContext = NULL;
++	/*libubus is not thread safe. When multiple threads of asterisk invoke ubus_send_event,
++          there is a possibility that one of the threads will be stuck in sending ubus event.
++          Use libindigo to send the ubus events, as it synchronizes the calls to send_ubus_event.*/
+ 
+-	ubusContext = ubus_connect(NULL);
+-	if(!ubusContext){
+-		ast_log(LOG_ERROR, "Failed to connect to ubus.");
+-		return -1;
+-	}
+-
+-	memset(&blob, 0, sizeof(blob));
+-	if(blob_buf_init(&blob, 0)) {
+-		ubus_free(ubusContext);
+-		return -1;
+-	}
+-
+-	blobmsg_add_string(&blob, "status", ev_name);
+-	blobmsg_add_string(&blob, "uri", client);
+-	blobmsg_add_u32(&blob, "expiration", time);
+-
+-	if(ubus_send_event(ubusContext, broadcast_path, blob.head) != UBUS_STATUS_OK) {
+-		ast_log(LOG_NOTICE,"Error sending ubus message %s\n", ev_name);
+-		res = -1;
+-	}
+-
+-	ubus_free(ubusContext);
+-	blob_buf_free(&blob);
+-
+-	return res;
++	REPORT(broadcast_path, REGISTRATION_CATEGORY, "{ \"status\":\"%s\", \"uri\":\"%s\", \"expiration\":\"%u\" }",
++                ev_name, client, time);
+ }
+ 
+ static void schedule_retry(struct registration_response *response, unsigned int interval,

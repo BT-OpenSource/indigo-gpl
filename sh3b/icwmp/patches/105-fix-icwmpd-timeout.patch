@@ -1,0 +1,20 @@
+--- a/cwmp.c
++++ b/cwmp.c
+@@ -598,7 +598,7 @@
+ 		uloop_end();
+ 	}
+ 
+-	uloop_timeout_set(timeout, 1);
++	uloop_timeout_set(timeout, 250);
+ }
+ 
+ static void *thread_uloop_run(void *v __attribute__((unused)))
+@@ -634,7 +634,7 @@
+ 	struct uloop_timeout tm;
+ 	memset(&tm, 0, sizeof(tm));
+ 	tm.cb = check_exit_timer_expiry;
+-	uloop_timeout_set(&tm, 1);
++	uloop_timeout_set(&tm, 250);
+ 
+ 	uloop_run();
+ 	uloop_done();

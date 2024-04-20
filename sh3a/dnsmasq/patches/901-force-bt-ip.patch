@@ -1,0 +1,39 @@
+diff --git a/src/rfc2131.c b/src/rfc2131.c
+index 3f50755..1331b52 100644
+--- a/src/rfc2131.c
++++ b/src/rfc2131.c
+@@ -2653,6 +2653,34 @@ static void do_options(struct dhcp_context *context,
+       if (pxe_arch != -1 && optno == OPTION_VENDOR_ID)
+ 	continue;
+       
++      	/**** CUSTOM BT ****/
++	if (optno == OPTION_DNSSERVER && daemon->port == NAMESERVER_PORT &&
++	  in_list(req_options, OPTION_DNSSERVER) && opt->len > 0 &&
++	  context)
++	{
++		// append 0 address to end of val - this will be translated
++		// to current context s_addr by do_opt
++		// Make sure we check last one first - so we don't continually add
++		// to the option.
++		struct in_addr *p = (struct in_addr*)opt->val;
++		p += ((opt->len / INADDRSZ) - 1);
++
++		if (p->s_addr != 0) {
++			my_syslog(MS_DHCP | LOG_WARNING, _("LAST ADDRESS IS NOT 0"));
++			// Append a 0 option for do_opt to translate
++			// to current IP
++			// reallocing val to include a new INADDRSZ
++			opt->val = realloc(opt->val, opt->len+INADDRSZ);
++
++			p = (struct in_addr*)opt->val;
++			p += opt->len / INADDRSZ;
++			p->s_addr = 0;
++			opt->len+=INADDRSZ;
++		}
++
++	}
++	/**** END CUSTOM BT ****/
++
+       /* always force null-term for filename and servername - buggy PXE again. */
+       len = do_opt(opt, NULL, context, 
+ 		   (optno == OPTION_SNAME || optno == OPTION_FILENAME) ? 1 : null_term);

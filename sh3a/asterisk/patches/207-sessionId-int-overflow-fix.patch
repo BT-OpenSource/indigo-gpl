@@ -1,0 +1,58 @@
+--- a/cdr/cdr_csv.c
++++ b/cdr/cdr_csv.c
+@@ -198,6 +198,24 @@ static int append_int(char *buf, int s,
+ 	return 0;
+ }
+ 
++static int append_unsigned_int(char *buf, unsigned int s, size_t bufsize)
++{
++	char tmp[32];
++	int pos = strlen(buf);
++
++	snprintf(tmp, sizeof(tmp), "%lu", s);
++
++	if (pos + strlen(tmp) > bufsize - 3)
++		return -1;
++
++	strncat(buf, tmp, bufsize - strlen(buf) - 1);
++	pos = strlen(buf);
++	buf[pos++] = ',';
++	buf[pos++] = '\0';
++
++	return 0;
++}
++
+ static int append_date(char *buf, struct timeval when, size_t bufsize)
+ {
+ 	char tmp[80] = "";
+@@ -252,7 +270,7 @@ static int build_csv_record(char *buf, s
+ 	/* Disposition */
+ 	append_string(buf, ast_cdr_disp2str(cdr->disposition), bufsize);
+ 	/* SessionId */
+-	append_int(buf, cdr->sessionId, bufsize);
++	append_unsigned_int(buf, cdr->sessionId, bufsize);
+ 	/* SIPSessionID */
+ 	append_string(buf, cdr->SIPSessionID, bufsize);
+ 	/* SIP IP Address */
+--- a/include/asterisk/cdr.h
++++ b/include/asterisk/cdr.h
+@@ -349,7 +349,7 @@ struct ast_cdr {
+ 	/*! Sequence field */
+ 	int sequence;
+ 	/*! SessionId */
+-	int sessionId;
++	unsigned int sessionId;
+ 	/*! SIPSessionID */
+ 	char SIPSessionID[33];
+ 	/*! sipIpAddress */
+--- a/main/cdr.c
++++ b/main/cdr.c
+@@ -3174,7 +3174,7 @@ void ast_cdr_format_var(struct ast_cdr *
+ 	} else if ((varbuf = cdr_format_var_internal(cdr, name))) {
+ 		ast_copy_string(workspace, varbuf, workspacelen);
+ 	} else if (!strcasecmp(name, "sessionId")) {
+-		snprintf(workspace, workspacelen, "%ld", cdr->sessionId);
++		snprintf(workspace, workspacelen, "%lu", cdr->sessionId);
+ 	} else if (!strcasecmp(name, "SIPSessionID")) {
+ 		ast_copy_string(workspace, cdr->SIPSessionID, workspacelen);
+ 	} else if (!strcasecmp(name, "sipIpAddress")) {

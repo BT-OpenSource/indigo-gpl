@@ -1,0 +1,43 @@
+diff --git a/tools/generate_dm_xml.py b/tools/generate_dm_xml.py
+index 97c7a46..4027501 100755
+--- a/tools/generate_dm_xml.py
++++ b/tools/generate_dm_xml.py
+@@ -16,8 +16,6 @@ DEVICE_PROTOCOL = "DEVICE_PROTOCOL_DSLFTR069v1"
+ MANUFACTURER = "iopsys"
+ MANUFACTURER_OUI = "002207"
+ PRODUCT_CLASS = "DG400PRIME"
+-MODEL_NAME = "DG400PRIME-A"
+-SOFTWARE_VERSION = "1.2.3.4"
+ 
+ ARRAY_TYPES = {"DMT_STRING": "string",
+                "DMT_UNINT": "unsignedInt",
+@@ -103,10 +101,12 @@ def generate_hdm_xml_file(output_file):
+     manufacturerOUI.text = str(MANUFACTURER_OUI)
+     productClass = ET.SubElement(root, "productClass")
+     productClass.text = str(PRODUCT_CLASS)
+-    modelName = ET.SubElement(root, "modelName")
+-    modelName.text = str(MODEL_NAME)
+-    softwareVersion = ET.SubElement(root, "softwareVersion")
+-    softwareVersion.text = str(SOFTWARE_VERSION)
++    if 'MODEL_NAME' in globals():
++        modelName = ET.SubElement(root, "modelName")
++        modelName.text = str(MODEL_NAME)
++    if 'SOFTWARE_VERSION' in globals():
++        softwareVersion = ET.SubElement(root, "softwareVersion")
++        softwareVersion.text = str(SOFTWARE_VERSION)
+     dm_type = ET.SubElement(root, "type")
+     dm_type.text = str("Device:2")
+ 
+@@ -297,8 +297,10 @@ if __name__ == '__main__':
+     DEVICE_PROTOCOL = args.device_protocol
+     MANUFACTURER_OUI = args.manufacturer_oui
+     PRODUCT_CLASS = args.product_class
+-    MODEL_NAME = args.model_name
+-    SOFTWARE_VERSION = args.software_version
++    if args.model_name:
++        MODEL_NAME = args.model_name
++    if args.software_version:
++        SOFTWARE_VERSION = args.software_version
+ 
+     plugins = []
+ 

@@ -1,0 +1,165 @@
+From 6886f8b8c7a120358a0f6d541943d5a464f8c93e Mon Sep 17 00:00:00 2001
+From: Sukru Senli <sukru.senli@iopsys.eu>
+Date: Thu, 21 Nov 2019 10:42:03 +0100
+Subject: [PATCH 02/12] netifd: Add interface type anywan.
+
+---
+ config.c    |  3 +++
+ interface.c | 61 +++++++++++++++++++++++++++++++++++++++++++++++++++--
+ interface.h |  1 +
+ vlandev.c   |  6 +++++-
+ 4 files changed, 68 insertions(+), 3 deletions(-)
+
+diff --git a/config.c b/config.c
+index 114dc83..af8c7db 100644
+--- a/config.c
++++ b/config.c
+@@ -195,6 +195,9 @@ config_parse_interface(struct uci_section *s, bool alias)
+ 	if (!bridge && uci_to_blob(&b, s, simple_device_type.config_params))
+ 		iface->device_config = true;
+ 
++	if (type && !strcmp(type, "anywan"))
++		iface->anywan = true;
++
+ 	config = blob_memdup(b.head);
+ 	if (!config)
+ 		goto error;
+diff --git a/interface.c b/interface.c
+index 2391e12..ca5f09a 100644
+--- a/interface.c
++++ b/interface.c
+@@ -633,6 +633,8 @@ interface_claim_device(struct interface *iface)
+ {
+ 	struct interface *parent;
+ 	struct device *dev = NULL;
++	char *ifname = NULL;
++	char if_buf[1024] = {0};
+ 
+ 	if (iface->parent_iface.iface)
+ 		interface_remove_user(&iface->parent_iface);
+@@ -645,13 +647,27 @@ interface_claim_device(struct interface *iface)
+ 		interface_add_user(&iface->parent_iface, parent);
+ 	} else if (iface->device &&
+ 		!(iface->proto_handler->flags & PROTO_FLAG_NODEV)) {
+-		dev = device_get(iface->device, true);
++		if (!iface->anywan)
++			dev = device_get(iface->device, true);
+ 		interface_set_device_config(iface, dev);
+ 	} else {
+ 		dev = iface->ext_dev.dev;
+ 	}
+ 
+-	if (dev)
++	if (iface->anywan) {
++		strncpy(if_buf, iface->device, sizeof(if_buf) - 1);
++		ifname = strtok((char*)if_buf, " ");
++		while (ifname != NULL)
++		{
++			dev = device_get(ifname, true);
++			if (dev && dev->present) {
++				interface_set_main_dev(iface, dev);
++				break;
++			}
++			ifname = strtok(NULL, " ");
++		}
++	}
++	else if (dev)
+ 		interface_set_main_dev(iface, dev);
+ 
+ 	device_unlock();
+@@ -1338,6 +1354,43 @@ interface_device_config_changed(struct interface *if_old, struct interface *if_n
+ 	return diff;
+ }
+ 
++static int
++interface_main_dev_changed(struct interface *if_old, struct interface *if_new)
++{
++	char *main_dev, *ifname;
++	char if_buf[1024] = {0};
++	struct device *dev;
++
++	if (!if_old || !if_new)
++		return 0;
++
++	main_dev = if_old->main_dev.dev->ifname;
++
++	/* only applicable for anywan */
++	if (!if_new->anywan)
++		return 0;
++
++	strncpy(if_buf, if_new->device, sizeof(if_buf) - 1);
++	ifname = strtok((char*)if_buf, " ");
++	while (ifname != NULL) {
++		dev = device_get(ifname, true);
++		/* if device is not present, check next */
++		if (!dev || !dev->present) {
++			ifname = strtok(NULL, " ");
++			continue;
++		}
++
++		/* if first encountered present device is main dev - no change */
++		if (strncmp(ifname, main_dev, IFNAMSIZ) == 0)
++			return 0;
++
++		/* first present device in list is not main dev - change */
++		return 1;
++	}
++
++	return 0;
++}
++
+ static void
+ interface_change_config(struct interface *if_old, struct interface *if_new)
+ {
+@@ -1358,6 +1411,9 @@ interface_change_config(struct interface *if_old, struct interface *if_new)
+ 	if (!reload && interface_device_config_changed(if_old, if_new))
+ 		reload = true;
+ 
++	if (!reload && interface_main_dev_changed(if_old, if_new))
++		reload = true;
++
+ 	if (FIELD_CHANGED_STR(device) ||
+ 	    if_old->proto_handler != if_new->proto_handler)
+ 		reload = true;
+@@ -1403,6 +1459,7 @@ interface_change_config(struct interface *if_old, struct interface *if_new)
+ 	if_old->proto_handler = if_new->proto_handler;
+ 	if_old->force_link = if_new->force_link;
+ 	if_old->dns_metric = if_new->dns_metric;
++	if_old->anywan = if_new->anywan;
+ 
+ 	if (if_old->proto_ip.no_delegation != if_new->proto_ip.no_delegation) {
+ 		if_old->proto_ip.no_delegation = if_new->proto_ip.no_delegation;
+diff --git a/interface.h b/interface.h
+index 1767bf1..9c98da2 100644
+--- a/interface.h
++++ b/interface.h
+@@ -120,6 +120,7 @@ struct interface {
+ 	bool link_state;
+ 	bool force_link;
+ 	bool dynamic;
++	bool anywan;
+ 	bool policy_rules_set;
+ 	bool link_up_event;
+ 
+diff --git a/vlandev.c b/vlandev.c
+index a0a0307..d9fe619 100644
+--- a/vlandev.c
++++ b/vlandev.c
+@@ -423,9 +423,13 @@ vlandev_reload(struct device *dev, struct blob_attr *attr)
+ 		if (uci_blob_diff(tb_mv, otb_mv, &vlandev_attr_list, NULL))
+ 		    ret = DEV_CONFIG_RESTART;
+ 
+-		vlandev_config_init(dev);
+ 	}
+ 
++	// anywan - mentioned here to know in future that having this init inside the if
++	// impacts anywan interface setup, hence, this should pop up when we do anywan
++	// related changes.
++	vlandev_config_init(dev);
++
+ 	free(mvdev->config_data);
+ 	mvdev->config_data = attr;
+ 	return ret;
+-- 
+2.32.0
+

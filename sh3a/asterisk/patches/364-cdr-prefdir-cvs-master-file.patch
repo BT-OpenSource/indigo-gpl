@@ -1,0 +1,12 @@
+--- a/cdr/cdr_csv.c
++++ b/cdr/cdr_csv.c
+@@ -146,6 +146,9 @@ static int load_config(int reload)
+ 			newcdrcolumns = ast_true(v->value);
+ 		} else if (!strcasecmp(v->name, "maxrow")) {
+ 			maxrow = atoi(v->value);
++		} else if (!strcasecmp(v->name, "prefdir")) {
++			snprintf(file_csv_master, sizeof(file_csv_master),
++				"%s/%s/%s", v->value, CSV_LOG_DIR, CSV_MASTER);
+ 		}
+ 
+ 	}

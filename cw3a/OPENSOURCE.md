@@ -1,11 +1,48 @@
 # Open Source Report
-## Version: undefined
-## Platform: undefined
-## Created: 2023-11-13T2206
+## Version: r1.34.0-N20240420-1052858
+## Platform: cw3
+## Created: 2024-04-20T1120
 |Package|Version|License|CPE-ID|SourceSource|
 |:---:|:---:|:---:|:---:|:---:|
+|base-files|1604-r16495-bf0c965af0|GPL-2.0|||
+|fstools|2021-01-04-c53b1882-1|GPL-2.0||[fstools](./dl/fstools-2021-01-04-c53b1882.tar.xz)<br>|
+|fwtool|2019-11-12-8f7fe925-1|GPL-2.0-only||[fwtool](./dl/fwtool-2019-11-12-8f7fe925.tar.xz)<br>|
+|ip6tables|1.8.7-1|GPL-2.0|cpe:/a:netfilter_core_team:iptables|[ip6tables](./dl/iptables-1.8.7.tar.bz2)<br>|
+|iptables-mod-conntrack-extra|1.8.7-1|GPL-2.0|cpe:/a:netfilter_core_team:iptables|[iptables-mod-conntrack-extra](./dl/iptables-1.8.7.tar.bz2)<br>|
+|iptables-mod-filter|1.8.7-1|GPL-2.0|cpe:/a:netfilter_core_team:iptables|[iptables-mod-filter](./dl/iptables-1.8.7.tar.bz2)<br>|
+|iptables-mod-ipopt|1.8.7-1|GPL-2.0|cpe:/a:netfilter_core_team:iptables|[iptables-mod-ipopt](./dl/iptables-1.8.7.tar.bz2)<br>|
+|iptables|1.8.7-1|GPL-2.0|cpe:/a:netfilter_core_team:iptables|[iptables](./dl/iptables-1.8.7.tar.bz2)<br>|
+|libip4tc2|1.8.7-1|GPL-2.0|cpe:/a:netfilter_core_team:iptables|[libip4tc2](./dl/iptables-1.8.7.tar.bz2)<br>|
+|libip6tc2|1.8.7-1|GPL-2.0|cpe:/a:netfilter_core_team:iptables|[libip6tc2](./dl/iptables-1.8.7.tar.bz2)<br>|
+|libxtables12|1.8.7-1|GPL-2.0|cpe:/a:netfilter_core_team:iptables|[libxtables12](./dl/iptables-1.8.7.tar.bz2)<br>|
+|mtd|26|GPL-2.0+|||
+|nand-utils|2.1.2-1|GPLv2||[nand-utils](./dl/mtd-utils-2.1.2.tar.bz2)<br>|
+|ubi-utils|2.1.2-1|GPLv2||[ubi-utils](./dl/mtd-utils-2.1.2.tar.bz2)<br>|
 |busybox|1.34.1-13|GPL-2.0|cpe:/a:busybox:busybox|[busybox](./dl/busybox-1.34.1.tar.bz2)<br>|
 |netifd|2021-10-30-8f82742c-1|GPL-2.0||[netifd](./dl/netifd-2021-10-30-8f82742c.tar.xz)<br>|
+|ethmngr|2.0.1|GPL-2.0-only||[ethmngr](./dl/ethmngr-2.0.1_5a0ff3bc7c49dcb05129f423ef8e0c4929f6aa03.tar.xz)<br>|
+|fdtextract|1.0-1|GPLv2||[fdtextract](./dl/fdtextract-1.0-0ebaf1e7d1f09318ae75d0f475a25280742b790e.tar.gz)<br>|
+|inbd|1.2.3-1|GPLv2||[inbd](./dl/inbd-1.2.3-1-d4e910a31039e0c0b7a539311eafcd716c36be77.tar.gz)<br>|
+|libbbf_api|6.8.9.20-703313a9cd03c485726ca978bcf42b0c4d16d06b|LGPL-2.1||[libbbf_api](./dl/libbbfdm-6.8.9.20-703313a9cd03c485726ca978bcf42b0c4d16d06b.tar.gz)<br>|
+|libbbfdm-openssl|6.8.9.20-703313a9cd03c485726ca978bcf42b0c4d16d06b|LGPL-2.1||[libbbfdm-openssl](./dl/libbbfdm-6.8.9.20-703313a9cd03c485726ca978bcf42b0c4d16d06b.tar.gz)<br>|
+|libeasy|6.5.57-1|GPLv2||[libeasy](./dl/easy-soc-libs-6.5.57_3b07e800c1f27b5bf65946339e94a86dfd96a95d.tar.xz)<br>|
+|libethernet|6.5.57-1|GPLv2||[libethernet](./dl/easy-soc-libs-6.5.57_3b07e800c1f27b5bf65946339e94a86dfd96a95d.tar.xz)<br>|
+|libqos|6.5.57-1|GPLv2||[libqos](./dl/easy-soc-libs-6.5.57_3b07e800c1f27b5bf65946339e94a86dfd96a95d.tar.xz)<br>|
+|libtrace|3.0.23-1|GPLv2||[libtrace](./dl/libtrace-3.0.23.tar.gz)<br>|
+|libwifi|6.5.57-1|GPLv2||[libwifi](./dl/easy-soc-libs-6.5.57_3b07e800c1f27b5bf65946339e94a86dfd96a95d.tar.xz)<br>|
+|mcastmngr|1.0.2|GPL-2.0-only|||
+|ndisc6|1.0.2-1|GPLv2||[ndisc6](./dl/ndisc6-1.0.2.tar.bz2)<br>|
+|netmode|0.3.0-1|GPL-2.0-only|||
+|periodicstats|1.2.0|GPL-2.0-only||[periodicstats](./dl/periodicstats-1.2.0-6c68428405bc88a9990e855f911aecc86f07f4a8.tar.gz)<br>|
+|port-management|1.1.0-1|GPL-2.0-only|||
+|qosmngr|1.0.4|GPL-2.0-only||[qosmngr](./dl/qosmngr-1.0.4-e3d608e4bacd367fed99bcdd7f56b3fba7b02891.tar.gz)<br>|
+|questd|5.2.4|GPL-2.0-only||[questd](./dl/questd-5.2.4-2ca3ae0c29dcbbf01282f6118eb8d5e5bc9a1c45.tar.gz)<br>|
+|rdisc6|1.0.2-1|GPLv2||[rdisc6](./dl/ndisc6-1.0.2.tar.bz2)<br>|
+|rdnssd|1.0.2-1|GPLv2||[rdnssd](./dl/ndisc6-1.0.2.tar.bz2)<br>|
+|stunc-openssl|1.1.12-1|GPL-2.0-only||[stunc-openssl](./dl/stunc-1.1.12-5b65364709a921db0956bf74a4f126217cfb1775.tar.gz)<br>|
+|traceroute6|1.0.2-1|GPLv2||[traceroute6](./dl/ndisc6-1.0.2.tar.bz2)<br>|
+|uspd-openssl|2.2.14|GPL-2.0-only||[uspd-openssl](./dl/uspd-2.2.14-1c3b886bb5e654049ae81cda726dffae950369c7.tar.gz)<br>|
+|wifimngr|14.0.9|GPL-2.0-only||[wifimngr](./dl/wifimngr-14.0.9_c14a18402bc3abf4098916fefe6dafd0873c4586.tar.xz)<br>|
 |evtest|1.34-3|GPL-2.0-or-later||[evtest](./dl/evtest-1.34.tar.xz)<br>|
 |gpiod-tools|1.4.4-1|LGPL-2.1-or-later||[gpiod-tools](./dl/libgpiod-1.4.4.tar.xz)<br>|
 |libaio|0.3.112-2|LGPL-2.1-only||[libaio](./dl/libaio-0.3.112.tar.gz)<br>|
@@ -58,40 +95,3 @@
 |uci|2021-04-14-4b3db117-5|LGPL-2.1||[uci](./dl/uci-2021-04-14-4b3db117.tar.xz)<br>|
 |usb-modeswitch|2017-12-19-f40f84c2-2|GPL-2.0||[usb-modeswitch](./dl/usbmode-2017-12-19-f40f84c2.tar.xz)<br>|
 |uuidgen|2.36.1-2|GPL-2.0|cpe:/a:kernel:util-linux|[uuidgen](./dl/util-linux-2.36.1.tar.xz)<br>|
-|ethmngr|2.0.1|GPL-2.0-only||[ethmngr](./dl/ethmngr-2.0.1_5a0ff3bc7c49dcb05129f423ef8e0c4929f6aa03.tar.xz)<br>|
-|fdtextract|1.0-1|GPLv2||[fdtextract](./dl/fdtextract-1.0-0ebaf1e7d1f09318ae75d0f475a25280742b790e.tar.gz)<br>|
-|inbd|1.2.3-1|GPLv2||[inbd](./dl/inbd-1.2.3-1-d4e910a31039e0c0b7a539311eafcd716c36be77.tar.gz)<br>|
-|libbbf_api|6.8.9.20-703313a9cd03c485726ca978bcf42b0c4d16d06b|LGPL-2.1||[libbbf_api](./dl/libbbfdm-6.8.9.20-703313a9cd03c485726ca978bcf42b0c4d16d06b.tar.gz)<br>|
-|libbbfdm-openssl|6.8.9.20-703313a9cd03c485726ca978bcf42b0c4d16d06b|LGPL-2.1||[libbbfdm-openssl](./dl/libbbfdm-6.8.9.20-703313a9cd03c485726ca978bcf42b0c4d16d06b.tar.gz)<br>|
-|libeasy|6.5.57-1|GPLv2||[libeasy](./dl/easy-soc-libs-6.5.57_3b07e800c1f27b5bf65946339e94a86dfd96a95d.tar.xz)<br>|
-|libethernet|6.5.57-1|GPLv2||[libethernet](./dl/easy-soc-libs-6.5.57_3b07e800c1f27b5bf65946339e94a86dfd96a95d.tar.xz)<br>|
-|libqos|6.5.57-1|GPLv2||[libqos](./dl/easy-soc-libs-6.5.57_3b07e800c1f27b5bf65946339e94a86dfd96a95d.tar.xz)<br>|
-|libtrace|3.0.23-1|GPLv2||[libtrace](./dl/libtrace-3.0.23.tar.gz)<br>|
-|libwifi|6.5.57-1|GPLv2||[libwifi](./dl/easy-soc-libs-6.5.57_3b07e800c1f27b5bf65946339e94a86dfd96a95d.tar.xz)<br>|
-|mcastmngr|1.0.2|GPL-2.0-only|||
-|ndisc6|1.0.2-1|GPLv2||[ndisc6](./dl/ndisc6-1.0.2.tar.bz2)<br>|
-|netmode|0.3.0-1|GPL-2.0-only|||
-|periodicstats|1.2.0|GPL-2.0-only||[periodicstats](./dl/periodicstats-1.2.0-6c68428405bc88a9990e855f911aecc86f07f4a8.tar.gz)<br>|
-|port-management|1.1.0-1|GPL-2.0-only|||
-|qosmngr|1.0.4|GPL-2.0-only||[qosmngr](./dl/qosmngr-1.0.4-e3d608e4bacd367fed99bcdd7f56b3fba7b02891.tar.gz)<br>|
-|questd|5.2.4|GPL-2.0-only||[questd](./dl/questd-5.2.4-2ca3ae0c29dcbbf01282f6118eb8d5e5bc9a1c45.tar.gz)<br>|
-|rdisc6|1.0.2-1|GPLv2||[rdisc6](./dl/ndisc6-1.0.2.tar.bz2)<br>|
-|rdnssd|1.0.2-1|GPLv2||[rdnssd](./dl/ndisc6-1.0.2.tar.bz2)<br>|
-|stunc-openssl|1.1.12-1|GPL-2.0-only||[stunc-openssl](./dl/stunc-1.1.12-5b65364709a921db0956bf74a4f126217cfb1775.tar.gz)<br>|
-|traceroute6|1.0.2-1|GPLv2||[traceroute6](./dl/ndisc6-1.0.2.tar.bz2)<br>|
-|uspd-openssl|2.2.14|GPL-2.0-only||[uspd-openssl](./dl/uspd-2.2.14-1c3b886bb5e654049ae81cda726dffae950369c7.tar.gz)<br>|
-|wifimngr|14.0.9|GPL-2.0-only||[wifimngr](./dl/wifimngr-14.0.9_c14a18402bc3abf4098916fefe6dafd0873c4586.tar.xz)<br>|
-|base-files|1604-r16495-bf0c965af0|GPL-2.0|||
-|fstools|2021-01-04-c53b1882-1|GPL-2.0||[fstools](./dl/fstools-2021-01-04-c53b1882.tar.xz)<br>|
-|fwtool|2019-11-12-8f7fe925-1|GPL-2.0-only||[fwtool](./dl/fwtool-2019-11-12-8f7fe925.tar.xz)<br>|
-|ip6tables|1.8.7-1|GPL-2.0|cpe:/a:netfilter_core_team:iptables|[ip6tables](./dl/iptables-1.8.7.tar.bz2)<br>|
-|iptables-mod-conntrack-extra|1.8.7-1|GPL-2.0|cpe:/a:netfilter_core_team:iptables|[iptables-mod-conntrack-extra](./dl/iptables-1.8.7.tar.bz2)<br>|
-|iptables-mod-filter|1.8.7-1|GPL-2.0|cpe:/a:netfilter_core_team:iptables|[iptables-mod-filter](./dl/iptables-1.8.7.tar.bz2)<br>|
-|iptables-mod-ipopt|1.8.7-1|GPL-2.0|cpe:/a:netfilter_core_team:iptables|[iptables-mod-ipopt](./dl/iptables-1.8.7.tar.bz2)<br>|
-|iptables|1.8.7-1|GPL-2.0|cpe:/a:netfilter_core_team:iptables|[iptables](./dl/iptables-1.8.7.tar.bz2)<br>|
-|libip4tc2|1.8.7-1|GPL-2.0|cpe:/a:netfilter_core_team:iptables|[libip4tc2](./dl/iptables-1.8.7.tar.bz2)<br>|
-|libip6tc2|1.8.7-1|GPL-2.0|cpe:/a:netfilter_core_team:iptables|[libip6tc2](./dl/iptables-1.8.7.tar.bz2)<br>|
-|libxtables12|1.8.7-1|GPL-2.0|cpe:/a:netfilter_core_team:iptables|[libxtables12](./dl/iptables-1.8.7.tar.bz2)<br>|
-|mtd|26|GPL-2.0+|||
-|nand-utils|2.1.2-1|GPLv2||[nand-utils](./dl/mtd-utils-2.1.2.tar.bz2)<br>|
-|ubi-utils|2.1.2-1|GPLv2||[ubi-utils](./dl/mtd-utils-2.1.2.tar.bz2)<br>|

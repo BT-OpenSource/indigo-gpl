@@ -1,0 +1,13 @@
+Index: libbbfdm-6.0.0/dmtree/vendor/iopsys/tr104/servicesvoiceservicedect.c
+===================================================================
+--- libbbfdm-6.0.0.orig/dmtree/vendor/iopsys/tr104/servicesvoiceservicedect.c
++++ libbbfdm-6.0.0/dmtree/vendor/iopsys/tr104/servicesvoiceservicedect.c
+@@ -52,7 +52,7 @@ static int set_ServicesVoiceServiceDECTP
+ /* *** Device.Services.VoiceService.{i}.DECT.Portable.{i}. *** */
+ DMLEAF tIOPSYS_VoiceServiceDECTPortableParams[] = {
+ /* PARAM, permission, type, getvalue, setvalue, bbfdm_type*/
+-{BBF_VENDOR_PREFIX"Name", &DMWRITE, DMT_STRING, get_ServicesVoiceServiceDECTPortable_Name, set_ServicesVoiceServiceDECTPortable_Name, BBFDM_BOTH},
++{"Name", &DMWRITE, DMT_STRING, get_ServicesVoiceServiceDECTPortable_Name, set_ServicesVoiceServiceDECTPortable_Name, BBFDM_BOTH},
+ {0}
+ };
+ 

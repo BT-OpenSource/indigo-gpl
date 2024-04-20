@@ -1,0 +1,211 @@
+From 274804e5e7025584904843edb615080c1b507087 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20H=C3=B6glund?= <jonas.hoglund@embeddednation.com>
+Date: Thu, 6 May 2021 17:31:38 +0200
+Subject: [PATCH] Fork procd and run sysupgrade in child process
+
+Only modify the environment of the child process. Chroot in
+child.
+---
+ system.c            |   3 +-
+ sysupgrade.c        | 126 +++++++++++++++++++++-----------------------
+ upgraded/upgraded.c |  10 ----
+ 3 files changed, 62 insertions(+), 77 deletions(-)
+
+diff --git a/system.c b/system.c
+index 0fb98f1..caee8ab 100644
+--- a/system.c
++++ b/system.c
+@@ -701,8 +701,7 @@ static int sysupgrade(struct ubus_context *ctx, struct ubus_object *obj,
+ 				 tb[SYSUPGRADE_COMMAND] ? blobmsg_get_string(tb[SYSUPGRADE_COMMAND]) : NULL,
+ 				 tb[SYSUPGRADE_OPTIONS]);
+ 
+-	/* sysupgrade_exec_upgraded() will never return unless something has gone wrong */
+-	return UBUS_STATUS_UNKNOWN_ERROR;
++	return UBUS_STATUS_OK;
+ }
+ 
+ static void
+diff --git a/sysupgrade.c b/sysupgrade.c
+index fc588b0..fdff173 100644
+--- a/sysupgrade.c
++++ b/sysupgrade.c
+@@ -29,86 +29,82 @@ void sysupgrade_exec_upgraded(const char *prefix, char *path,
+ 			      const char *backup, char *command,
+ 			      struct blob_attr *options)
+ {
+-	char *wdt_fd = watchdog_fd();
+ 	char *argv[] = { "/sbin/upgraded", NULL, NULL, NULL};
+ 	struct blob_attr *option;
+ 	int rem;
+ 	int ret;
++	int cpid;
++
++	cpid = fork();
++	if (cpid == 0) {
++
++		argv[1] = path;
++		argv[2] = command;
++
++		if (backup)
++			setenv("UPGRADE_BACKUP", backup, 1);
++
++		blobmsg_for_each_attr(option, options, rem) {
++			const char *prefix = "UPGRADE_OPT_";
++			char value[11];
++			char *name;
++			char *c;
++			int tmp;
++
++			if (asprintf(&name, "%s%s", prefix, blobmsg_name(option)) <= 0)
++				continue;
++			for (c = name + strlen(prefix); *c; c++) {
++				if (isalnum(*c) || *c == '_') {
++					*c = toupper(*c);
++				} else {
++					c = NULL;
++					break;
++				}
++			}
+ 
+-	ret = chroot(prefix);
+-	if (ret < 0) {
+-		fprintf(stderr, "Failed to chroot for upgraded exec.\n");
+-		return;
+-	}
+-
+-	argv[1] = path;
+-	argv[2] = command;
+-
+-	if (wdt_fd) {
+-		watchdog_set_cloexec(false);
+-		setenv("WDTFD", wdt_fd, 1);
+-	}
++			if (!c) {
++				fprintf(stderr, "Option \"%s\" contains invalid characters\n",
++						blobmsg_name(option));
++				free(name);
++				continue;
++			}
+ 
+-	if (backup)
+-		setenv("UPGRADE_BACKUP", backup, 1);
+-
+-	blobmsg_for_each_attr(option, options, rem) {
+-		const char *prefix = "UPGRADE_OPT_";
+-		char value[11];
+-		char *name;
+-		char *c;
+-		int tmp;
+-
+-		if (asprintf(&name, "%s%s", prefix, blobmsg_name(option)) <= 0)
+-			continue;
+-		for (c = name + strlen(prefix); *c; c++) {
+-			if (isalnum(*c) || *c == '_') {
+-				*c = toupper(*c);
+-			} else {
+-				c = NULL;
++			switch (blobmsg_type(option)) {
++			case BLOBMSG_TYPE_INT32:
++				tmp = blobmsg_get_u32(option);
++				break;
++			case BLOBMSG_TYPE_INT16:
++				tmp = blobmsg_get_u16(option);
++				break;
++			case BLOBMSG_TYPE_INT8:
++				tmp = blobmsg_get_u8(option);
+ 				break;
++			default:
++				fprintf(stderr, "Option \"%s\" has unsupported type: %d\n",
++						blobmsg_name(option), blobmsg_type(option));
++				free(name);
++				continue;
+ 			}
+-		}
++			snprintf(value, sizeof(value), "%u", tmp);
+ 
+-		if (!c) {
+-			fprintf(stderr, "Option \"%s\" contains invalid characters\n",
+-				blobmsg_name(option));
+-			free(name);
+-			continue;
+-		}
++			setenv(name, value, 1);
+ 
+-		switch (blobmsg_type(option)) {
+-		case BLOBMSG_TYPE_INT32:
+-			tmp = blobmsg_get_u32(option);
+-			break;
+-		case BLOBMSG_TYPE_INT16:
+-			tmp = blobmsg_get_u16(option);
+-			break;
+-		case BLOBMSG_TYPE_INT8:
+-			tmp = blobmsg_get_u8(option);
+-			break;
+-		default:
+-			fprintf(stderr, "Option \"%s\" has unsupported type: %d\n",
+-				blobmsg_name(option), blobmsg_type(option));
+ 			free(name);
+-			continue;
+ 		}
+-		snprintf(value, sizeof(value), "%u", tmp);
+ 
+-		setenv(name, value, 1);
++		ret = chroot(prefix);
+ 
+-		free(name);
+-	}
+-
+-	execvp(argv[0], argv);
++		if (ret < 0) {
++			fprintf(stderr, "Failed to chroot for upgraded exec.\n");
++			exit(EXIT_FAILURE);
++		}
+ 
+-	/* Cleanup on failure */
+-	fprintf(stderr, "Failed to exec upgraded.\n");
+-	unsetenv("WDTFD");
+-	watchdog_set_cloexec(true);
+-	ret = chroot(".");
+-	if (ret < 0) {
+-		fprintf(stderr, "Failed to reset chroot, exiting.\n");
++		/* Child */
++		execvp(argv[0], argv);
++		/* Cleanup on failure */
++		fprintf(stderr, "Failed to exec upgraded.\n");
+ 		exit(EXIT_FAILURE);
+ 	}
++
++	return;
+ }
+diff --git a/upgraded/upgraded.c b/upgraded/upgraded.c
+index db98701..0cef2f3 100644
+--- a/upgraded/upgraded.c
++++ b/upgraded/upgraded.c
+@@ -65,13 +65,6 @@ static void sysupgrade(char *path, char *command)
+ 
+ int main(int argc, char **argv)
+ {
+-	pid_t p = getpid();
+-
+-	if (p != 1) {
+-		fprintf(stderr, "this tool needs to run as pid 1\n");
+-		return 1;
+-	}
+-
+ 	int fd = open("/", O_DIRECTORY|O_PATH);
+ 	if (fd < 0) {
+ 		fprintf(stderr, "unable to open prefix directory: %m\n");
+@@ -95,10 +88,7 @@ int main(int argc, char **argv)
+ 	}
+ 
+ 	uloop_init();
+-	watchdog_init(0);
+ 	sysupgrade(argv[1], argv[2]);
+ 
+-	reboot(RB_AUTOBOOT);
+-
+ 	return 0;
+ }
+-- 
+2.25.1
+

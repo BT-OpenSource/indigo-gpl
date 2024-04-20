@@ -1,0 +1,18 @@
+--- a/channels/chan_brcm.c
++++ b/channels/chan_brcm.c
+@@ -3351,13 +3351,13 @@ static void brcm_process_event(struct en
+ 								ast_debug(2, "Hang up the unanswered call on channel %s since %s has rejected\n",
+ 										ast_channel_name(sc->owner), ast_channel_name(owner));
+ 
+-								ast_channel_hangupcause_set(sc->owner, AST_CAUSE_CALL_REJECTED);
++								ast_channel_hangupcause_set(sc->owner, AST_CAUSE_USER_BUSY);
+ 								ast_queue_control(sc->owner, AST_CONTROL_HANGUP);
+ 							} else if (sub->channel_state == INCALL && (link == peer_linkedid || strcmp(link, peer_linkedid) == 0)) {
+ 								ast_debug(2, "Hang up the unanswered call on channel %s since %s has rejected\n",
+ 										ast_channel_name(sc->owner), ast_channel_name(peer_owner));
+ 
+-								ast_channel_hangupcause_set(sc->owner, AST_CAUSE_CALL_REJECTED);
++								ast_channel_hangupcause_set(sc->owner, AST_CAUSE_USER_BUSY);
+ 								ast_queue_control(sc->owner, AST_CONTROL_HANGUP);
+ 							}
+ 						}

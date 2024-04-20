@@ -1,0 +1,18 @@
+--- a/channels/chan_brcm.c
++++ b/channels/chan_brcm.c
+@@ -31,7 +31,6 @@
+ 
+ #include <math.h>
+ #include <ctype.h>
+-#include <sys/socket.h>
+ #include <sys/time.h>
+ #include <arpa/inet.h>
+ #include <fcntl.h>
+@@ -794,6 +793,7 @@ static int brcm_indicate(struct ast_chan
+ 		// Play a beep when unholding.
+ 		play_bridge_channel = ast_channel_get_bridge_channel(ast);
+ 		ast_bridge_channel_queue_playfile(play_bridge_channel, NULL, "beep", NULL);
++		ao2_ref(play_bridge_channel, -1);
+ 
+ 		sub->channel_state = INCALL;
+ 

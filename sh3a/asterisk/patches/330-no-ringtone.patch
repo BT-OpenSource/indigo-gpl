@@ -1,0 +1,136 @@
+--- a/channels/chan_brcm.c
++++ b/channels/chan_brcm.c
+@@ -725,29 +725,31 @@
+ 		ast_channel_lock(sub->owner);
+ 
+ 		if (bridged_chan) {
++			ast_debug(5, "Got bridged_chan\n");
+ 			// for the internal call, bridged_chan is allocated but codec and ptime is not set so need to check it here and set default
+ 			// ptime and get codec from sub-owner in this case
+ 			ast_channel_ptime_set(sub->owner, ast_channel_ptime_get(bridged_chan) ? ast_channel_ptime_get(bridged_chan) : default_ptime);
+ 			ast_channel_codec_set(sub->owner, !ast_strlen_zero(ast_channel_codec_get(bridged_chan)) ?
+ 				ast_channel_codec_get(bridged_chan) : ast_format_get_name(ast_channel_writeformat(sub->owner)));
+-			// we need to set caps here from bridged_chan to avoid asterisk transcoding which break audio in some cases
+-			struct ast_format_cap *caps;
+-			caps = ast_format_cap_alloc(AST_FORMAT_CAP_FLAG_DEFAULT);
+-			if (caps) {
+-				ast_format_cap_append(caps, map_rtpname_to_format((char *)ast_channel_codec_get(bridged_chan)), 0);
+-				ast_channel_nativeformats_set(sub->owner, caps);
+-				ao2_ref(caps, -1);
+-			} else {
+-				ao2_cleanup(caps);
+-				ast_log(LOG_WARNING, "Unable to allocate caps\n");
+-			}
+-
+-			ast_log(LOG_NOTICE, "Sync local codec to :%s, and ptime tp %d \n", ast_channel_codec_get(sub->owner), ast_channel_ptime_get(sub->owner));
+ 			ao2_ref(bridged_chan, -1);
+-		} else {
++		} else if ((!brcm_in_conference(sub->parent) && sub->call_direction == INCOMING_CALL) || ast_strlen_zero(ast_channel_codec_get(sub->owner))) {
++			//return for incoming_call that waiting for bridge peer, but exclude the scenario of conference which could not obtain the bridged_chan here.
++			//return if has no codec set
+ 			ast_channel_unlock(sub->owner);
+ 			return;
+ 		}
++		ast_debug(5, "set format\n");
++		// we need to set caps here to avoid asterisk transcoding which break audio in some cases
++		struct ast_format_cap *caps;
++		caps = ast_format_cap_alloc(AST_FORMAT_CAP_FLAG_DEFAULT);
++		if (caps) {
++			ast_format_cap_append(caps, map_rtpname_to_format((char *)ast_channel_codec_get(sub->owner)), 0);
++			ast_channel_nativeformats_set(sub->owner, caps);
++			ao2_ref(caps, -1);
++		} else {
++			ao2_cleanup(caps);
++			ast_log(LOG_WARNING, "Unable to allocate caps\n");
++		}
+ 
+ 		struct config_update_struct data = {
+ 			.mask = 0,
+@@ -779,6 +781,7 @@
+ static int brcm_indicate(struct ast_channel *ast, int condition, const void *data, size_t datalen)
+ {
+ 	struct brcm_subchannel *sub = ast_channel_tech_pvt(ast);
++	struct brcm_subchannel *sub_peer = brcm_subchannel_get_peer(sub);
+ 	struct ast_bridge_channel *play_bridge_channel;
+ 	struct ast_bridge *myBridge;
+ 	struct ast_frame astFrame;
+@@ -826,8 +829,12 @@
+ 		ast_debug(4, "Got AST_CONTROL_RINGING on %s, sub->codec = %d\n", ast_channel_name(ast), sub->codec);
+ 		sub->channel_state = RINGBACK;
+ 		// Play local ringback tone only if there is no incoming media packet
+-		if (sub->codec == -1)
++		if (sub->codec == -1) {
+ 			endpt_signal(sub->parent->line_id, "ringback", "on", NULL);
++		} else {
++			sub->updated_codec = 0; // do a sync if incoming media.
++			chan_brcm_modify_codec(sub);
++		}
+ 		if (sub->owner && (sub->call_id == 0)) {
+ 			sub->call_id = ast_channel_callid(sub->owner);
+ 			endpt_connection(sub->parent->line_id, sub->call_id, "update");
+@@ -887,7 +894,6 @@
+ 		res = -1;
+ 		ast_debug(4, "Got CONNECTED LINE UPDATE on %s\n", ast_channel_name(ast));
+ 		/* Update caller IDs on display - dect ? */
+-		struct brcm_subchannel *sub_peer = brcm_subchannel_get_peer(sub);
+ 		if ((sub->connection_id != -1) && (sub_peer->connection_id != -1)) {
+ 			ast_channel_lock(sub->owner);
+ 			struct ast_bridge *bridge = ast_channel_internal_bridge(sub->owner);
+@@ -934,6 +940,13 @@
+ 		ast_debug(4, "Got AST_CONTROL_PROGRESS on %s\n", ast_channel_name(ast));
+ 		/* Early media is coming our way */
+ 		/* What do we do with that? */
++		if (sub->channel_state == RINGBACK) {
++			endpt_signal(sub->parent->line_id, "ringback", "off", NULL);
++		} else if (sub->channel_state == CALLING) {
++			endpt_signal(sub->parent->line_id, "dial", "off", NULL);
++		}
++		sub->updated_codec = 0; // do a sync when received early media.
++		chan_brcm_modify_codec(sub);
+ 		res = -1;
+ 		break;
+ 	case AST_CONTROL_NORMAL_DIALTONE:
+@@ -2953,7 +2966,6 @@
+ 			frame.subclass.integer = ap->rtp[12];
+ 		} else if (sub->channel_state == OFFHOOK
+ 		 || sub->channel_state == DIALING
+-		 || sub->channel_state == RINGBACK
+ 		 || (owner && !ast_strlen_zero(ast_channel_codec_get(owner)) && strcmp(brcm_get_codec_string(payload_type),ast_channel_codec_get(owner)))){
+ 			drop_frame=1;
+ 		} else {
+@@ -2962,11 +2974,6 @@
+ 				frame.subclass.format = format;
+ 				frame.samples = ast_codec_samples_count(&frame);
+ 			}
+-			//in case of media played during calling on an outgoing call and there has no codec set.
+-			if (owner && ast_strlen_zero(ast_channel_codec_get(owner))) {
+-				ast_channel_codec_set(owner, ast_format_get_name(frame.subclass.format));
+-				ast_log(LOG_NOTICE, "set local codec to :%s \n", ast_channel_codec_get(owner));
+-			}
+ 		}
+ 		sub->dsp_ssrc = packet_buf32[2]; // save the DSP's SSRC
+ 	} else if (rtp_packet_type == BRCM_RTCP_SR || rtp_packet_type == BRCM_RTCP_RR) {
+--- a/main/channel.c
++++ b/main/channel.c
+@@ -6736,9 +6736,9 @@
+ 	ast_channel_unlock(from);
+ 
+ 	if (no_path) {
+-		ast_log(LOG_WARNING, "No path to translate from %s to %s\n",
++		ast_debug(3, "No path to translate from %s to %s\n",
+ 			ast_channel_name(from), ast_channel_name(to));
+-		return -1;
++		return 0;
+ 	}
+ 
+ 	/* if the best path is not 'pass through', then
+--- a/apps/app_dial.c
++++ b/apps/app_dial.c
+@@ -1549,6 +1549,7 @@
+ 					}
+ 					if (!ast_test_flag64(outgoing, OPT_RINGBACK)) {
+ 						if (single || (!single && !pa->sentringing)) {
++							ast_channel_codec_set(in, ast_channel_codec_get(c)); //for early media codec sync
+ 							ast_indicate(in, AST_CONTROL_PROGRESS);
+ 						}
+ 					}

@@ -1,0 +1,60 @@
+--- a/res/res_pjsip/pjsip_message_ip_updater.c
++++ b/res/res_pjsip/pjsip_message_ip_updater.c
+@@ -222,6 +222,13 @@ static void FUNC_ATTRS sanitize_tdata(pj
+ 	pjsip_tx_data_invalidate_msg(tdata);
+ }
+ 
++static int is_registration_cseq(pjsip_tx_data *tdata)
++{
++    pjsip_cseq_hdr *cseq = NULL;
++    cseq = pjsip_msg_find_hdr(tdata->msg, PJSIP_H_CSEQ, NULL);
++    return !pj_strcmp2(&cseq->method.name, "REGISTER");
++}
++
+ static pj_status_t multihomed_on_tx_message(pjsip_tx_data *tdata)
+ {
+ 	struct multihomed_message_restrictions *restrictions = ast_sip_mod_data_get(tdata->mod_data, multihomed_module.id, MOD_DATA_RESTRICTIONS);
+@@ -281,6 +288,14 @@ static pj_status_t multihomed_on_tx_mess
+ 		pj_strassign(&prm.ret_addr, &tdata->tp_info.transport->local_name.host);
+ 	}
+ 
++	if (tdata->msg->type == PJSIP_REQUEST_MSG && (via = pjsip_msg_find_hdr(tdata->msg, PJSIP_H_VIA, NULL))) {
++		pj_strassign(&via->sent_by.host, &prm.ret_addr);
++
++        if(!is_registration_cseq(tdata)){
++            via->sent_by.port = prm.ret_port;
++        }
++        pjsip_tx_data_invalidate_msg(tdata);
++	}
+ 	/* If the message needs to be updated with new address do so */
+ 	if (tdata->msg->type == PJSIP_REQUEST_MSG || !(cseq = pjsip_msg_find_hdr(tdata->msg, PJSIP_H_CSEQ, NULL)) ||
+ 		pj_strcmp2(&cseq->method.name, "REGISTER")) {
+@@ -291,7 +306,14 @@ static pj_status_t multihomed_on_tx_mess
+ 
+ 			/* prm.ret_addr is allocated from the tdata pool OR the transport so it is perfectly fine to just do an assignment like this */
+ 			pj_strassign(&uri->host, &prm.ret_addr);
+-			uri->port = prm.ret_port;
++            /* Patch is send actual source port in the Contact header,
++             so IMS can differentiate between fresh registration and re registration requests.*/
++            if(is_registration_cseq(tdata)){
++                uri->port = via->sent_by.port;
++            }
++            else{
++                uri->port = prm.ret_port;
++            }
+ 			ast_debug(5, "Re-wrote Contact URI host/port to %.*s:%d (this may be re-written again later)\n",
+ 				(int)pj_strlen(&uri->host), pj_strbuf(&uri->host), uri->port);
+ 
+@@ -306,12 +328,6 @@ static pj_status_t multihomed_on_tx_mess
+ 		}
+ 	}
+ 
+-	if (tdata->msg->type == PJSIP_REQUEST_MSG && (via = pjsip_msg_find_hdr(tdata->msg, PJSIP_H_VIA, NULL))) {
+-		pj_strassign(&via->sent_by.host, &prm.ret_addr);
+-		via->sent_by.port = prm.ret_port;
+-
+-		pjsip_tx_data_invalidate_msg(tdata);
+-	}
+ 
+ 	if (tdata->msg->type == PJSIP_REQUEST_MSG && (from = pjsip_msg_find_hdr(tdata->msg, PJSIP_H_FROM, NULL)) &&
+ 		(restrictions && !restrictions->disallow_from_domain_modification)) {

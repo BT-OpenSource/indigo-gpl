@@ -1,0 +1,406 @@
+diff --git a/README.md b/README.md
+index a48901e..0978fdd 100644
+--- a/README.md
++++ b/README.md
+@@ -12,6 +12,7 @@ methods within its objects.
+ 2. DSL channel status
+ 3. DSL line statistics
+ 4. DSL channel statistics
++5. DSL line loop test params statistics
+ 
+ ### UCI Config
+ 
+diff --git a/dslmngr.c b/dslmngr.c
+index a3d617a..480e95a 100644
+--- a/dslmngr.c
++++ b/dslmngr.c
+@@ -39,13 +39,14 @@
+ 
+ #define DSL_OBJECT_LINE "line"
+ #define DSL_OBJECT_CHANNEL "channel"
++#define sizeof_field(t, m) sizeof((((t *)0)->m))
+ 
+ struct value2text {
+ 	int value;
+ 	char *text;
+ };
+ 
+-int current_log_level = LOG_WARNING;
++int current_log_level = LOG_INFO;
+ 
+ enum {
+ 	DSL_STATS_INTERVAL,
+@@ -623,6 +624,97 @@ static void dsl_stats_to_blob(const struct dsl_line_channel_stats *stats, struct
+ 	blobmsg_add_u64(bb, "quarter_hour_start", stats->quarter_hour_start);
+ }
+ 
++/**
++ * @brief		Creates a ubus string blob from the referenced data buffer. The string is a comma-delimited
++ * 			list of the values per TR-181 defintion for the specific parameter
++ *
++ * @param name		Ubus blob name to be added
++ * @param buffer	Pointer to the data buffer
++ * @param length	Length of the data buffer - FIXME, change to use sizeof from struct??
++ * @param max_out_len	The max size of the string as defined by TR-181
++ * @param bb		The ubus blob to which the output shall be added
++ */
++static void dsl_add_string_list_to_blob(const char *name, short *buffer, unsigned int length, unsigned int max_out_len, struct blob_buf *bb)
++{
++	int i;
++	char data[max_out_len + 1], *pos = data, *orig = data;
++	short *bsp = buffer;
++
++	DSLMNGR_LOG(LOG_DEBUG, "%s: length = %d, max out = %d", name, length, max_out_len);
++	if (0 == length) {  // No data to process
++		DSLMNGR_LOG(LOG_WARNING, "%s: No buffer data to add", name);
++		blobmsg_add_string(bb, name, "");
++		return;
++	}
++
++	for (i = 0; i < length; i++) {
++//		DSLMNGR_LOG(LOG_DEBUG, "%d: pos: %p, bsp: %p, usage: %d, raw = %hd", i, pos, bsp, (pos - orig), *bsp);
++		// Look ahead buffer usage - bail if too large
++		if ((pos - orig) <= (max_out_len - 3)) {
++			pos += sprintf(pos, "%d", *bsp);
++			bsp++;
++		} else {
++			DSLMNGR_LOG(LOG_ERR, "Buffer use fail @ %d = %d/%d\n", i, (pos - orig), max_out_len);
++		}
++
++		// Add comma delimiters, except for after final value, when string will be null terminated
++		if (i != (length - 1)) {
++			if ((pos - orig) <= (max_out_len - 1)) {
++				pos += sprintf(pos, ",");
++			} else {
++				DSLMNGR_LOG(LOG_ERR, "Buffer use fail = %d/%d\n", (pos - orig), max_out_len);
++			}
++		}
++	}
++	DSLMNGR_LOG(LOG_DEBUG, "Buffer used = %d/%d\n", (pos - orig), max_out_len);
++	blobmsg_add_string(bb, name, data);
++}
++
++/**
++ * @brief		Creates a ubus blob of all Device.DSL.Line.{i}.TestParams parameters, and adds to blob
++ *
++ * @param test_params	DSL .TestParams structure from libdsl
++ * @param bb		Ubus blob to which test params are added
++ */
++static void dsl_test_params_to_blob(const struct dsl_line_test_params *test_params, struct blob_buf *bb)
++{
++	unsigned long hlogg[] = { test_params->hlogg.us, test_params->hlogg.ds };
++	unsigned long hlogmt[] = { test_params->hlogmt.us, test_params->hlogmt.ds };
++	unsigned long qlng[] = { test_params->qlng.us, test_params->qlng.ds };
++	unsigned long qlnmt[] = { test_params->qlnmt.us, test_params->qlnmt.ds };
++	unsigned long snrg[] = { test_params->snrg.us, test_params->snrg.ds };
++	unsigned long snrmt[] = { test_params->snrmt.us, test_params->snrmt.ds };
++
++	DSLMNGR_LOG(LOG_DEBUG, "Starting %s()", __FUNCTION__);
++	DSLMNGR_LOG(LOG_DEBUG, "Adding test params...");
++
++	// HLOG
++	dsl_add_usds_to_blob("hlogg", false, hlogg, bb);
++	dsl_add_string_list_to_blob("hlog_psds", test_params->hlogps_ds, sizeof_field(struct dsl_line_test_params, hlogps_ds) / sizeof(short), 2559, bb);
++	dsl_add_string_list_to_blob("hlog_psus", test_params->hlogps_us, sizeof_field(struct dsl_line_test_params, hlogps_us) / sizeof(short), 2559, bb);
++	dsl_add_usds_to_blob("hlogmt", false, hlogmt, bb);
++
++	// QLN
++	dsl_add_usds_to_blob("qlng", false, qlng, bb);
++	dsl_add_string_list_to_blob("qln_psds", test_params->qlnps_ds, sizeof_field(struct dsl_line_test_params, qlnps_ds) / sizeof(short), 2047, bb);
++	dsl_add_string_list_to_blob("qln_psus", test_params->qlnps_us, sizeof_field(struct dsl_line_test_params, qlnps_us) / sizeof(short), 2047, bb);
++	dsl_add_usds_to_blob("qlnmt", false, qlnmt, bb);
++
++	// SNR
++	dsl_add_usds_to_blob("snrg", false, snrg, bb);
++	dsl_add_string_list_to_blob("snr_psds", test_params->snrps_ds, sizeof_field(struct dsl_line_test_params, snrps_ds) / sizeof(short), 2047, bb);
++	dsl_add_string_list_to_blob("snr_psus", test_params->snrps_us, sizeof_field(struct dsl_line_test_params, snrps_us) / sizeof(short), 2047, bb);
++	dsl_add_usds_to_blob("snrmt", false, snrmt, bb);
++
++	// LATN
++	dsl_add_string_list_to_blob("latn_ds", test_params->latn_ds, sizeof_field(struct dsl_line_test_params, latn_ds) / sizeof(unsigned short), 35, bb);
++	dsl_add_string_list_to_blob("latn_us", test_params->latn_us, sizeof_field(struct dsl_line_test_params, latn_us) / sizeof(unsigned short), 35, bb);
++
++	// SATN
++	dsl_add_string_list_to_blob("satn_ds", test_params->satn_ds, sizeof_field(struct dsl_line_test_params, satn_ds) / sizeof(unsigned short), 35, bb);
++	dsl_add_string_list_to_blob("satn_us", test_params->satn_us, sizeof_field(struct dsl_line_test_params, satn_us) / sizeof(unsigned short), 35, bb);
++}
++
+ static void dsl_stats_line_interval_to_blob(const struct dsl_line_stats_interval *stats, struct blob_buf *bb)
+ {
+ 	blobmsg_add_u64(bb, "errored_secs", stats->errored_secs);
+@@ -686,7 +778,6 @@ int dsl_stats_all(struct ubus_context *ctx, struct ubus_object *obj,
+ 			memset(&if_stats, 0, sizeof(struct if_stats));
+ 			memset(&stats, 0, sizeof(struct dsl_line_channel_stats));
+ 		}
+-		dsl_if_stats_to_blob(&if_stats, &bb);
+ 		dsl_stats_to_blob(&stats, &bb);
+ 
+ 		// Line interval statistics
+@@ -763,9 +854,72 @@ __ret:
+ 	return retval;
+ }
+ 
++/**
++ * @brief		Constructs the ubus test_params response
++ *
++ * @param ctx		ubus context
++ * @param obj		ubus object
++ * @param req		ubus request
++ * @param method	ubus calling method
++ * @param msg		Returned ubus blob
++ *
++ * @return 		0 on sucess, <0 otherwise
++ */
++int dsl_test_params(struct ubus_context *ctx, struct ubus_object *obj,
++		struct ubus_request_data *req, const char *method, struct blob_attr *msg)
++{
++	int retval = UBUS_STATUS_OK;
++	static struct blob_buf bb;
++	struct dsl_line line;
++	char ifname[IFNAMSIZ];
++	struct dsl_line_test_params test_params;
++	int i, max_line;
++	void *array_line, *table_line;
++
++	// Enable logging
++	DSLMNGR_LOG(LOG_DEBUG, "Starting %s()...", __FUNCTION__);
++
++	// Initialize the buffer
++	memset(&bb, 0, sizeof(bb));
++	blob_buf_init(&bb, 0);
++
++	array_line = blobmsg_open_array(&bb, DSL_OBJECT_LINE);
++	for (i = 0, max_line = dsl_get_line_number(); i < max_line; i++) {
++		if (xdsl_ops.get_line_test_params == NULL || (*xdsl_ops.get_line_test_params)(i, &test_params) != 0) {
++			retval = UBUS_STATUS_UNKNOWN_ERROR;
++			goto __ret;
++		}
++
++		// Line table
++		table_line = blobmsg_open_table(&bb, "");
++
++		// Line statistics
++		blobmsg_add_u32(&bb, "id", (unsigned int)i + 1);
++
++		if (line.link_status == LINK_NOSIGNAL) {  // FIXME - this isn't being read from anywhere
++			memset(&test_params, 0, sizeof(struct dsl_line_test_params));
++		}
++		dsl_test_params_to_blob(&test_params, &bb);
++
++		// Close the table for one line
++		blobmsg_close_table(&bb, table_line);
++	}
++	blobmsg_close_array(&bb, array_line);
++
++	// Send the reply
++	ubus_send_reply(ctx, req, bb.head);
++
++__ret:
++	blob_buf_free(&bb);
++
++	return retval;
++}
++
++
+ static struct ubus_method dsl_methods[] = {
+ 	{ .name = "status", .handler = dsl_status_all },
+-	{ .name = "stats", .handler = dsl_stats_all }
++	{ .name = "stats", .handler = dsl_stats_all },
++	{ .name = "test_params", .handler = dsl_test_params }
+ };
+ static struct ubus_object_type dsl_type = UBUS_OBJECT_TYPE("dsl", dsl_methods);
+ static struct ubus_object dsl_object = {
+@@ -1301,10 +1455,109 @@ __ret:
+ 	return retval;
+ }
+ 
++/**
++ * @brief		Creates a ubus blob of all Device.FAST.Line.{i}.TestParams parameters, and adds to blob
++ *
++ * @param test_params	FAST .TestParams structure from libdsl
++ * @param bb		Ubus blob to which test params are added
++ */
++static void fast_test_params_to_blob(const struct fast_line_test_params *test_params, struct blob_buf *bb)
++{
++	unsigned long snrg[] = { test_params->snrg.us, test_params->snrg.ds };
++	unsigned long snrmt[] = { test_params->snrmt.us, test_params->snrmt.ds };
++	unsigned long curr_rate[] = { test_params->curr_rate.us, test_params->curr_rate.ds };
++
++	DSLMNGR_LOG(LOG_DEBUG, "Starting %s()", __FUNCTION__);
++	DSLMNGR_LOG(LOG_DEBUG, "Adding test params...");
++
++	// SNR
++	dsl_add_usds_to_blob("snrg", false, snrg, bb);
++	dsl_add_string_list_to_blob("snr_psds", test_params->snrps_ds, sizeof_field(struct fast_line_test_params,
++				snrps_ds) / sizeof(short), 2047, bb);
++	dsl_add_string_list_to_blob("snr_psus", test_params->snrps_us, sizeof_field(struct fast_line_test_params,
++				snrps_us) / sizeof(short), 2047, bb);
++	dsl_add_usds_to_blob("snrmt", false, snrmt, bb);
++
++	// Others
++	dsl_add_int_to_blob("actinp", test_params->act_inp, bb);
++	dsl_add_int_to_blob("nfec", test_params->nfec, bb);
++	dsl_add_int_to_blob("rfec", test_params->rfec, bb);
++	dsl_add_usds_to_blob("curr_rate", false, curr_rate, bb);
++	dsl_add_int_to_blob("actinprein", test_params->act_inp_rein, bb);
++}
++
++/**
++ * @brief		Constructs the ubus test_params response
++ *
++ * @param ctx		ubus context
++ * @param obj		ubus object
++ * @param req		ubus request
++ * @param method	ubus calling method
++ * @param msg		Returned ubus blob
++ *
++ * @return 		0 on sucess, <0 otherwise
++ */
++int fast_test_params(struct ubus_context *ctx, struct ubus_object *obj,
++		struct ubus_request_data *req, const char *method, struct blob_attr *msg)
++{
++	int retval = UBUS_STATUS_OK;
++	static struct blob_buf bb;
++	struct fast_line line;
++	struct fast_line_test_params test_params;
++	int i, max_line;
++	void *array_line, *table_line;
++
++	// Enable logging
++	DSLMNGR_LOG(LOG_DEBUG, "Starting %s()...", __FUNCTION__);
++
++	// Initialize the buffer
++	memset(&bb, 0, sizeof(bb));
++	blob_buf_init(&bb, 0);
++
++	array_line = blobmsg_open_array(&bb, DSL_OBJECT_LINE);
++	for (i = 0, max_line = dsl_get_line_number(); i < max_line; i++) {
++		if (xdsl_ops.get_fast_line_info == NULL || (*xdsl_ops.get_fast_line_info)(i, &line) != 0) {
++			retval = UBUS_STATUS_UNKNOWN_ERROR;
++			goto __ret;
++		}
++
++		if (xdsl_ops.get_fast_line_test_params == NULL || (*xdsl_ops.get_fast_line_test_params)(i, &test_params) != 0) {
++			retval = UBUS_STATUS_UNKNOWN_ERROR;
++			goto __ret;
++		}
++
++		// Line table
++		table_line = blobmsg_open_table(&bb, "");
++
++		// Line statistics
++		blobmsg_add_u32(&bb, "id", (unsigned int)i + 1);
++
++		if (line.link_status == LINK_NOSIGNAL) {  // FIXME - this isn't being read anywhere
++			memset(&test_params, 0, sizeof(struct fast_line_test_params));
++		}
++		fast_test_params_to_blob(&test_params, &bb);
++
++		// Close the table for one line
++		blobmsg_close_table(&bb, table_line);
++	}
++	blobmsg_close_array(&bb, array_line);
++
++	// Send the reply
++	ubus_send_reply(ctx, req, bb.head);
++
++__ret:
++	blob_buf_free(&bb);
++
++	return retval;
++}
++
++
+ static struct ubus_method fast_methods[] = {
+ 	{ .name = "status", .handler = fast_status_all },
+-	{ .name = "stats", .handler = fast_stats_all }
++	{ .name = "stats", .handler = fast_stats_all },
++	{ .name = "test_params", .handler = fast_test_params }
+ };
++
+ static struct ubus_object_type fast_type = UBUS_OBJECT_TYPE("fast", fast_methods);
+ static struct ubus_object fast_object = {
+ 	.name = "fast",
+diff --git a/dslmngr.h b/dslmngr.h
+index a1248d6..2b54241 100644
+--- a/dslmngr.h
++++ b/dslmngr.h
+@@ -52,6 +52,8 @@ int dsl_status_all(struct ubus_context *ctx, struct ubus_object *obj,
+ 
+ int dsl_line_stats(struct ubus_context *ctx, struct ubus_object *obj,
+ 		struct ubus_request_data *req, const char *method, struct blob_attr *msg);
++int dsl_line_test_params(struct ubus_context *ctx, struct ubus_object *obj,
++		struct ubus_request_data *req, const char *method, struct blob_attr *msg);
+ int dsl_channel_stats(struct ubus_context *ctx, struct ubus_object *obj,
+ 		struct ubus_request_data *req, const char *method, struct blob_attr *msg);
+ int dsl_stats_all(struct ubus_context *ctx, struct ubus_object *obj,
+@@ -60,6 +62,8 @@ int fast_line_status(struct ubus_context *ctx, struct ubus_object *obj,
+ 		struct ubus_request_data *req, const char *method, struct blob_attr *msg);
+ int fast_line_stats_handler(struct ubus_context *ctx, struct ubus_object *obj,
+ 		struct ubus_request_data *req, const char *method, struct blob_attr *msg);
++int fast_line_test_params(struct ubus_context *ctx, struct ubus_object *obj,
++		struct ubus_request_data *req, const char *method, struct blob_attr *msg);
+ 
+ int atm_link_status(struct ubus_context *ctx, struct ubus_object *obj,
+ 		struct ubus_request_data *req, const char *method, struct blob_attr *msg);
+diff --git a/main.c b/main.c
+index 7040a7e..99080f0 100644
+--- a/main.c
++++ b/main.c
+@@ -54,7 +54,7 @@ int main(int argc, char **argv)
+ {
+ 	const char *ubus_socket = NULL;
+ 	struct ubus_context *ctx = NULL;
+-	int ch, ret;
++	int ch;
+ 	pthread_t evtid;
+ 	pthread_attr_t attr;
+ 
+@@ -70,6 +70,8 @@ int main(int argc, char **argv)
+ 	argc -= optind;
+ 	argv += optind;
+ 
++	DSLMNGR_LOG(LOG_INFO, "Starting dslmngr...");
++
+ 	if (pthread_attr_init(&attr) == 0) {
+ 		struct sched_param sp;
+ 
+@@ -102,6 +104,7 @@ int main(int argc, char **argv)
+ __ret:
+ 	ubus_free(ctx);
+ 	uloop_done();
++	DSLMNGR_LOG(LOG_INFO, "Stopping dslmngr...");
+ 
+-	return ret;
++	return 0;
+ }
+diff --git a/test/api/json/dsl.validation.json b/test/api/json/dsl.validation.json
+index 32c5bbc..0bedd6a 100644
+--- a/test/api/json/dsl.validation.json
++++ b/test/api/json/dsl.validation.json
+@@ -5,6 +5,10 @@
+       "method": "status",
+       "rc": 0
+     },
++    {
++      "method": "test_params",
++      "rc": 0
++    },
+     {
+       "method": "stats",
+       "rc": 0
+diff --git a/test/api/json/fast.line.validation.json b/test/api/json/fast.line.validation.json
+index 831f382..25b2680 100644
+--- a/test/api/json/fast.line.validation.json
++++ b/test/api/json/fast.line.validation.json
+@@ -7,6 +7,10 @@
+       "rc": 0
+     },
+ 
++    {
++      "method": "test_params",
++      "rc": 0
++    },
+     {
+       "method": "stats",
+       "rc": 0

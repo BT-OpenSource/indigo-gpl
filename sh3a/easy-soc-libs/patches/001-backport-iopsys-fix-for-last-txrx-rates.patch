@@ -1,0 +1,25 @@
+--- a/libwifi/modules/broadcom/wlctrl.c
++++ b/libwifi/modules/broadcom/wlctrl.c
+@@ -4150,10 +4150,12 @@ static int bcmwl_get_sta_info_rspec(stru
+ 	switch (rspec & WL_RSPEC_ENCODING_MASK) {
+ 	case WL_RSPEC_ENCODE_RATE:
+ 		phy = PHY_OFDM;
++		bw = 20;
++		nss = 1;
+ 		break;
+ 	case WL_RSPEC_ENCODE_HT:
+ 		gi = ((rspec & WL_RSPEC_SGI)  != 0) ? WIFI_SGI : WIFI_LGI;
+-		nss = rate->rate / 8;
++		nss = 1 + rate->rate / 8;
+ 		mcs = rate->rate % 8;
+ 		phy = PHY_HT;
+ 		break;
+@@ -4196,6 +4198,8 @@ static int bcmwl_get_sta_info_rspec(stru
+ 	switch (phy) {
+ 	case PHY_OFDM:
+ 		rate->rate /= 2;
++		rate->m.nss = nss;
++		rate->m.bw = bw;
+ 		break;
+ 	default:
+ 		rate->m.bw = bw;

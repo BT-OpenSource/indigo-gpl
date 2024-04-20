@@ -1,0 +1,88 @@
+Index: libbbfdm-6.8.9.20/dmdiagnostics.c
+===================================================================
+--- libbbfdm-6.8.9.20.orig/dmdiagnostics.c
++++ libbbfdm-6.8.9.20/dmdiagnostics.c
+@@ -670,11 +670,13 @@ int bbf_fw_image_download(const char *ur
+ 	// Check the file system size if there is sufficient space for downloading the firmware image
+ 	if (!validate_file_system_size(file_size)) {
+ 		res = -1;
++		BBF_ERR("No sufficient space for downloading the firmware image");
+ 		goto end;
+ 	}
+ 
+ 	res = open(fw_image_path, O_CREAT | O_EXCL, 0600); // open with read plus write permissions for owner only
+ 	if (res == -1) {
++		BBF_ERR("Failed to open file %s", fw_image_path);
+ 		goto end;
+ 	} else {
+ 		close(res); // close the fd, as only filename required
+@@ -699,12 +701,14 @@ int bbf_fw_image_download(const char *ur
+ 	// Check if the download operation was successful
+ 	if (!get_response_code_status(url, res_code)) {
+ 		res = -1;
++		BBF_ERR("Failed to check if the download operation was successful");
+ 		goto end;
+ 	}
+ 
+ 	// Validate the CheckSum value according to its algorithm
+ 	if (!validate_checksum_value(fw_image_path, checksum_algorithm, checksum)) {
+ 		res = -1;
++		BBF_ERR("Failed to validate the checksum of firmware image");
+ 		goto end;
+ 	}
+ 
+@@ -715,14 +719,17 @@ int bbf_fw_image_download(const char *ur
+ 
+ 	if (json_obj == NULL) {
+ 		res = -1;
++		BBF_ERR("Failed to apply the firmware image");
+ 		goto end;
+ 	}
+ 
+ 	sleep(30); // Wait for the image to become available
+ 	// Reboot the device if auto activation is true
+ 	if (activate) {
+-		if (dmubus_call_set("system", "reboot", UBUS_ARGS{0}, 0) != 0)
++		if (dmubus_call_set("system", "reboot", UBUS_ARGS{0}, 0) != 0) {
++			BBF_ERR("Failed to reboot the system");
+ 			res = -1;
++		}
+ 		sleep(10); // Wait for reboot to take action
+ 	}
+ 
+Index: libbbfdm-6.8.9.20/libbbf_api/dmbbf.c
+===================================================================
+--- libbbfdm-6.8.9.20.orig/libbbf_api/dmbbf.c
++++ libbbfdm-6.8.9.20/libbbf_api/dmbbf.c
+@@ -1931,3 +1931,11 @@ int dm_browse_last_access_path(char *pat
+ 	snprintf(path, len, "%s", dm_browse_path);
+ 	return 0;
+ }
++
++void bbf_error_log(const char *format, ...)
++{
++	va_list arglist;
++	va_start(arglist, format);
++	vsyslog(LOG_ERR, format, arglist);
++	va_end(arglist);
++}
+Index: libbbfdm-6.8.9.20/libbbf_api/dmbbf.h
+===================================================================
+--- libbbfdm-6.8.9.20.orig/libbbf_api/dmbbf.h
++++ libbbfdm-6.8.9.20/libbbf_api/dmbbf.h
+@@ -62,6 +62,7 @@ bool find_root_entry(struct dmctx *ctx,
+ int get_obj_idx_dynamic_array(DMOBJ **entryobj);
+ int get_leaf_idx_dynamic_array(DMLEAF **entryleaf);
+ void free_dm_browse_node_dynamic_object_tree(DMNODE *parent_node, DMOBJ *entryobj);
++void bbf_error_log(const char *format, ...);
+ 
+ char *update_instance_alias(int action, char **last_inst, char **max_inst, void *argv[]);
+ char *update_instance(char *max_inst, int argc, ...);
+@@ -100,4 +101,7 @@ static inline int DM_LINK_INST_OBJ(struc
+ #define BBF_DEBUG(fmt, ...)
+ #endif
+ 
++#define BBF_ERR(fmt, args...) \
++        bbf_error_log("[%s:%d] " fmt, __func__, __LINE__, ##args)
++
+ #endif //__DMBBF_H__

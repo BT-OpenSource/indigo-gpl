@@ -1,0 +1,51 @@
+diff --git a/dmtree/tr181/gatewayinfo.c b/dmtree/tr181/gatewayinfo.c
+index b344d08..37b5de2 100644
+--- a/dmtree/tr181/gatewayinfo.c
++++ b/dmtree/tr181/gatewayinfo.c
+@@ -11,6 +11,7 @@
+ #include "gatewayinfo.h"
+ #include "dmbbfcommon.h"
+ 
++#if 0
+ enum gateway_param {
+ 	E_OUI,
+ 	E_SERIAL,
+@@ -77,34 +78,23 @@ static void get_gateway_params(int param, char *dst, int size)
+ 
+ 	return;
+ }
++#endif
+ 
+ static int get_manufacturer_oui(char *refparam, struct dmctx *ctx, void *data, char *instance, char **value)
+ {
+-	char oui[7] = {0};
+-
+-	get_gateway_params(E_OUI, oui, sizeof(oui));
+-	*value = dmstrdup(oui);
+-
++	db_get_value_string("device", "deviceinfo", "ManufacturerOUI", value);
+ 	return 0;
+ }
+ 
+ static int get_product_class(char *refparam, struct dmctx *ctx, void *data, char *instance, char **value)
+ {
+-	char class[65] = {0};
+-
+-	get_gateway_params(E_CLASS, class, sizeof(class));
+-	*value = dmstrdup(class);
+-
++	db_get_value_string("device", "deviceinfo", "ProductClass", value);
+ 	return 0;
+ }
+ 
+ static int get_serial_number(char *refparam, struct dmctx *ctx, void *data, char *instance, char **value)
+ {
+-	char serial[65] = {0};
+-
+-	get_gateway_params(E_SERIAL, serial, sizeof(serial));
+-	*value = dmstrdup(serial);
+-
++	db_get_value_string("device", "deviceinfo", "SerialNumber", value);
+ 	return 0;
+ }
+ 

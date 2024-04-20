@@ -1,0 +1,121 @@
+--- a/channels/chan_brcm.c
++++ b/channels/chan_brcm.c
+@@ -126,6 +126,7 @@ static struct ast_channel *brcm_new(stru
+ 		const struct ast_assigned_ids *assignedids, const struct ast_channel *requestor,
+ 		struct ast_format_cap *format);
+ static int handle_dialtone_timeout(const void *data);
++static int handle_congestion_timeout(const void *data);
+ static void brcm_play_announcement(struct brcm_pvt *p, const char *announce_type);
+ static void handle_bt_digitmap(struct brcm_subchannel *sub);
+ static int handle_bt_interdigit_timeout(const void *data);
+@@ -988,32 +989,43 @@ static int brcm_indicate(struct ast_chan
+ 		  switch (ast_cause) {
+ 		  case AST_CAUSE_NO_USER_RESPONSE:
+ 		  case AST_CAUSE_NO_ANSWER:
+-		  case AST_CAUSE_CALL_REJECTED:
++		case AST_CAUSE_CONGESTION:
+ 			  endpt_signal(sub->parent->line_id, "ringback", "off", NULL);
+ 			  if (ast_channel_state(ast) != AST_STATE_UP) {
+ 				  endpt_signal(sub->parent->line_id, "congestion", "on", NULL);
+-                                  strncpy(sub->parent->extensionCallStatus, "Disconnected", CALL_STATUS_MAX_LEN);
++				strncpy(sub->parent->extensionCallStatus, "Disconnected", CALL_STATUS_MAX_LEN);
+ 				  break;
+ 			  }
+ 			  res = -1;
+ 			  break;
+-		  case AST_CAUSE_NORMAL_CLEARING:
++		case AST_CAUSE_CALL_REJECTED:
++			// schedule a congestion tone playing instead of playing directly to avoid temp status{401,407} during outgoing INVITE
++			sub->congestion_timer_id = ast_sched_add(sched, 1000, handle_congestion_timeout, sub);
++			break;
++		case AST_CAUSE_NORMAL_CLEARING:
++			if (sub->congestion_timer_id != -1) {
++				// clear the scheduled congestion tone playing if got a normal response during the re-INVITE
++				if(ast_sched_del(sched, sub->congestion_timer_id)){
++					ast_log(LOG_WARNING, "Failed to remove scheduled congestion tone timer\n");
++				}
++				sub->congestion_timer_id = -1;
++			}
+ 				  // This is just fine.
+ 			  	  break;
+-		  case AST_CAUSE_USER_BUSY:
++		case AST_CAUSE_USER_BUSY:
+ 				endpt_signal(sub->parent->line_id, "ringback", "off", NULL);
+ 				if (ast_channel_state(ast) != AST_STATE_UP) {
+ 					/* XXX We should play a busy tone here!! */
+-					sub->channel_state = CALLENDED;
++				sub->channel_state = CALLENDED;
+ 					endpt_signal(sub->parent->line_id, "busy", "on", NULL);
+ 					strncpy(sub->parent->extensionCallStatus, "Disconnected", CALL_STATUS_MAX_LEN);
+ 					break;
+ 				}
+ 				res = -1;
+-		  case AST_CAUSE_NETWORK_OUT_OF_ORDER:
++		case AST_CAUSE_NETWORK_OUT_OF_ORDER:
+ 			  brcm_stop_dialtone(sub->parent); // stop any dialtone exist if disconnection happened due to network/server
+ 			  break;
+-		  default:
++		default:
+ 			  ast_debug(1, "Don't know how to handle cause code %d\n", ast_cause);
+ 			  break;
+ 		}
+@@ -2250,6 +2262,28 @@ static int handle_interdigit_timeout(con
+ 	pvt_unlock(p);
+ 	return 0;
+ }
++/*
++ * Play congestion tone if got AST_CAUSE_CALL_REJECTED
++ * Called on scheduler thread.
++ */
++static int handle_congestion_timeout(const void *data)
++{
++	struct brcm_subchannel *sub;
++	sub = (struct brcm_subchannel *) data;
++	pvt_lock(sub->parent, "congestion tone playing");
++
++	sub->congestion_timer_id = -1;
++
++	endpt_signal(sub->parent->line_id, "ringback", "off", NULL);
++	if (sub && sub->owner && (ast_channel_state(sub->owner) != AST_STATE_UP)) {
++		endpt_signal(sub->parent->line_id, "congestion", "on", NULL);
++		strncpy(sub->parent->extensionCallStatus, "Disconnected", CALL_STATUS_MAX_LEN);
++	}
++
++	ast_debug(9, "congestion playing, sub->channel_state: %s\n", state2str(sub->channel_state));
++	pvt_unlock(sub->parent);
++	return 0;
++}
+ 
+ /*
+  * Start autodialing if we have an autodial extension.
+@@ -3465,6 +3499,12 @@ static void brcm_process_event(struct en
+ 		}
+ 		case EVENT_ONHOOK: {
+ 			strncpy(p->extensionCallStatus, "Idle", CALL_STATUS_MAX_LEN);
++			if (sub->congestion_timer_id != -1) {
++				if(ast_sched_del(sched, sub->congestion_timer_id)){
++					ast_log(LOG_WARNING, "Failed to remove scheduled congestion tone timer\n");
++				}
++				sub->congestion_timer_id = -1;
++			}
+ 			if (sub->channel_state == OFFHOOK || sub->channel_state == AWAITONHOOK) {
+ 				/* Received EVENT_ONHOOK in state OFFHOOK/AWAITONHOOK, stop dial/congestion tone */
+ 				brcm_stop_dialtone(p);
+@@ -3685,6 +3725,7 @@ static struct brcm_pvt *brcm_allocate_pv
+ 				sub->conf_timer_id = -1;
+ 				sub->r4_hangup_timer_id = -1;
+ 				sub->onhold_hangup_timer_id = -1;
++				sub->congestion_timer_id = -1;
+ 				sub->period = default_ptime;												// 20 ms
+ 				sub->conference_initiator = 0;
+ 				tmp->sub[i] = sub;
+--- a/channels/chan_brcm.h
++++ b/channels/chan_brcm.h
+@@ -165,6 +165,7 @@ struct brcm_subchannel {
+ 	unsigned long int farEndInterrivalJitter;
+ 	char blind_xfer_target[32];	/* Transfer target for unattended call transfer */
+ 	int updated_codec;
++	int congestion_timer_id;
+ };
+ 
+ 
