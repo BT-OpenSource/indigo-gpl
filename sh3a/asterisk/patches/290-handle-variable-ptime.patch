@@ -1,0 +1,144 @@
+--- a/channels/chan_brcm.h
++++ b/channels/chan_brcm.h
+@@ -138,6 +138,7 @@
+ 	enum CALL_DIRECTION call_direction;		// Direction of call for the subchannel : 0 = incoming, 1 = outgoing
+ 	unsigned int connection_init;	/* State for endpoint id connection initialization */
+ 	struct ast_frame fr;		/* Frame */
++	uint16_t sequence_number;       /* Endpoint RTP sequence number state */
+ 	unsigned int time_stamp;	/* Endpoint RTP time stamp state */
+ 	unsigned int period;		/* Endpoint RTP period */
+ 	unsigned int ssrc;		/* Endpoint RTP synchronization source */
+--- a/channels/chan_brcm.c
++++ b/channels/chan_brcm.c
+@@ -62,6 +62,7 @@
+ #include "asterisk/bridge.h"
+ #include "asterisk/stasis_system.h"
+ #include "asterisk/stasis_channels.h"
++#include "asterisk/rtp_engine.h"
+ 
+ #include <libubus.h>
+ #include <libpicoevent.h>
+@@ -77,7 +78,7 @@
+ static int cwtimeout_cb(const void *data);
+ static int cwbeep_cb(const void *data);
+ static int r4hanguptimeout_cb(const void *data);
+-static void brcm_generate_rtp_packet(struct brcm_subchannel *p, uint8_t *packet_buf, int type, int marker, int dtmf_timestamp, int seqno);
++static void brcm_generate_rtp_packet(struct brcm_subchannel *p, uint8_t *packet_buf, int type, int seqno, unsigned int rtp_timestamp);
+ static void brcm_process_rtcp_packet(struct brcm_subchannel *p, uint8_t *rtcp_frame, uint32_t rtcp_size);
+ static int brcm_mute_connection(struct brcm_subchannel *p);
+ static int brcm_unmute_connection(struct brcm_subchannel *p);
+@@ -750,7 +751,7 @@
+ 			.mask = 0,
+ 		};
+ 		/* update codec */
+-		if (ast_channel_codec_get(sub->owner)) {
++		if (!ast_strlen_zero(ast_channel_codec_get(sub->owner))) {
+ 			data.codec = codec_string_to_enum(ast_channel_codec_get(sub->owner));
+ 			data.mask = data.mask|UBUS_DATA_CODEC_BIT;
+ 		}
+@@ -764,7 +765,9 @@
+ 		endpt_connection_data(sub->parent->line_id, sub->call_id, "parm_update", &data);
+ 		ast_log(LOG_NOTICE, "connection parm_update, codec: %d, ptime: %d",data.codec, data.ptime);
+ 
+-		sub->updated_codec = 1;
++		if (data.mask & UBUS_DATA_CODEC_BIT) {
++			sub->updated_codec = 1;
++		}
+ 
+ 		ast_channel_unlock(sub->owner);
+ 
+@@ -811,6 +814,7 @@
+ 		sub->codec = -1;
+ 		if (sub->channel_state == RINGBACK)
+ 			endpt_signal(sub->parent->line_id, "ringback", "off", NULL);
++		sub->updated_codec = 0; // do a sync each time when ssrc/peer changes.
+ 		chan_brcm_modify_codec(sub);
+ 		pvt_unlock(sub->parent);
+ 		break;
+@@ -1616,6 +1620,7 @@
+ 	struct brcm_subchannel *sub = ast_channel_tech_pvt(ast);
+ 	int packet_size;
+ 	audio_packet_t *ap;
++	unsigned int rtp_timestamp = frame->ts * (ast_rtp_get_rate(frame->subclass.format)/1000);
+ 
+ 	if (ast_channel_state(ast) != AST_STATE_UP && ast_channel_state(ast) != AST_STATE_RING) {
+ 		/* Silently ignore packets until channel is up */
+@@ -1649,7 +1654,7 @@
+ 		pvt_lock(sub->parent, "TELCHAN write frame");
+ 
+ 		/* generate the rtp header */
+-		brcm_generate_rtp_packet(sub, ap->rtp, CN, 0, 0, frame->seqno);
++		brcm_generate_rtp_packet(sub, ap->rtp, CN, frame->seqno, rtp_timestamp);
+ 
+ 		/* set rtp payload_type sent to endpoint */
+ 		sub->codec = CN;
+@@ -1679,7 +1684,7 @@
+ 		pvt_lock(sub->parent, "TELCHAN write frame");
+ 
+ 		/* generate the rtp header */
+-		brcm_generate_rtp_packet(sub, ap->rtp, map_ast_codec_id_to_rtp(frame->subclass.format), 0, 0, frame->seqno);
++		brcm_generate_rtp_packet(sub, ap->rtp, map_ast_codec_id_to_rtp(frame->subclass.format), frame->seqno, rtp_timestamp);
+ 
+ 		/* set rtp payload_type sent to endpoint */
+ 		sub->codec = map_ast_codec_id_to_rtp(frame->subclass.format);
+@@ -2939,10 +2944,8 @@
+ 			frame.subclass.integer = ap->rtp[12];
+ 		} else if (sub->channel_state == OFFHOOK
+ 		 || sub->channel_state == DIALING
+-		 || sub->channel_state == CALLING
+ 		 || sub->channel_state == RINGBACK
+-		 || (owner && strcmp(brcm_get_codec_string(payload_type),ast_channel_codec_get(owner)))){
+-			chan_brcm_modify_codec(sub); //in case of no bridge peer when doing the modify_codec during outgoing call
++		 || (owner && !ast_strlen_zero(ast_channel_codec_get(owner)) && strcmp(brcm_get_codec_string(payload_type),ast_channel_codec_get(owner)))){
+ 			drop_frame=1;
+ 		} else {
+ 			struct ast_format *format = map_rtptype_to_format(payload_type);
+@@ -2950,6 +2953,11 @@
+ 				frame.subclass.format = format;
+ 				frame.samples = ast_codec_samples_count(&frame);
+ 			}
++			//in case of media played during calling on an outgoing call and there has no codec set.
++			if (owner && ast_strlen_zero(ast_channel_codec_get(owner))) {
++				ast_channel_codec_set(owner, ast_format_get_name(frame.subclass.format));
++				ast_log(LOG_NOTICE, "set local codec to :%s \n", ast_channel_codec_get(owner));
++			}
+ 		}
+ 	} else if (rtp_packet_type == BRCM_RTCP_SR || rtp_packet_type == BRCM_RTCP_RR) {
+ 		frame.frametype = AST_FRAME_RTCP;
+@@ -3607,6 +3615,7 @@
+ 				sub->connection_init = 0;
+ 				sub->channel_state = ONHOOK;
+ 				sub->time_stamp = 0;
++				sub->sequence_number = 0;
+ 				sub->ssrc = 0;
+ 				sub->codec = -1;
+ 				sub->parent = tmp;
+@@ -3871,6 +3880,7 @@
+ 		ast_cli(a->fd, "  Channel state       : %s\n", state2str(sub->channel_state));
+ 		ast_cli(a->fd, "  Connection init     : %d\n", sub->connection_init);
+ 		ast_cli(a->fd, "  Codec used          : %s\n", brcm_get_codec_string(sub->codec));
++		ast_cli(a->fd, "  RTP sequence number : %d\n", sub->sequence_number);
+ 		ast_cli(a->fd, "  RTP SSRC            : %d\n", sub->ssrc);
+ 		ast_cli(a->fd, "  RTP timestamp       : %d\n", sub->time_stamp);
+ 		ast_cli(a->fd, "  CW Timer id         : %d\n", sub->cw_timer_id);
+@@ -5321,7 +5331,7 @@
+ 
+ 
+ /* Generate rtp payload, 12 bytes of header and 160 bytes of ulaw payload */
+-static void brcm_generate_rtp_packet(struct brcm_subchannel *sub, uint8_t *packet_buf, int type, int marker, int dtmf_timestamp, int seqno) {
++static void brcm_generate_rtp_packet(struct brcm_subchannel *sub, uint8_t *packet_buf, int type, int seqno, unsigned int rtp_timestamp) {
+ 	unsigned short* packet_buf16 = (unsigned short*)packet_buf;
+ 	unsigned int*   packet_buf32 = (unsigned int*)packet_buf;
+ 
+@@ -5331,9 +5341,8 @@
+ 	//Extension 0
+ 	//CSRC count 0
+ 	packet_buf[1] = type;
+-	packet_buf[1] |= marker?0x80:0x00;
+-	packet_buf16[1] = htons(seqno); //Add sequence number
+-	packet_buf32[1] = htonl(sub->time_stamp); //Add timestamp
++	packet_buf16[1] = htons(seqno ? seqno : sub->sequence_number++); //Add sequence number
++	packet_buf32[1] = htonl(rtp_timestamp ? rtp_timestamp : sub->time_stamp); //Add timestamp
+ 	sub->time_stamp += sub->period*8;
+ 	packet_buf32[2] = sub->ssrc;
+ }

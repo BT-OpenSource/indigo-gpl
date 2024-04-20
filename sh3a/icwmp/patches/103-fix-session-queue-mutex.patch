@@ -1,0 +1,99 @@
+From 6ba7bbc3031a6f8f4636f00a1e39166e7a594af8 Mon Sep 17 00:00:00 2001
+From: suvendhu <suvendhu.hansa@iopsys.eu>
+Date: Fri, 28 Apr 2023 16:40:34 +0530
+Subject: [PATCH] Fix session queue mutex
+
+---
+ cwmp.c      |  6 ++++++
+ heartbeat.c | 10 ++++++++++
+ 2 files changed, 16 insertions(+)
+
+diff --git a/cwmp.c b/cwmp.c
+index 172ee80f..65858dd3 100644
+--- a/cwmp.c
++++ b/cwmp.c
+@@ -542,7 +542,9 @@ static void cwmp_schedule_session(struct cwmp *cwmp)
+ 		if (thread_end) {
+ 			event_remove_all_event_container(session, RPC_SEND);
+ 			run_session_end_func();
++			pthread_mutex_lock(&(cwmp->mutex_session_queue));
+ 			cwmp_session_destructor(session);
++			pthread_mutex_unlock(&(cwmp->mutex_session_queue));
+ 			pthread_mutex_unlock(&mutex_heartbeat_session);
+ 			pthread_mutex_unlock(&(cwmp->mutex_session_send));
+ 			return;
+@@ -553,7 +555,9 @@ static void cwmp_schedule_session(struct cwmp *cwmp)
+ 			if (thread_end) {
+ 				event_remove_all_event_container(session, RPC_SEND);
+ 				run_session_end_func();
++				pthread_mutex_lock(&(cwmp->mutex_session_queue));
+ 				cwmp_session_destructor(session);
++				pthread_mutex_unlock(&(cwmp->mutex_session_queue));
+ 				pthread_mutex_unlock(&mutex_heartbeat_session);
+ 				pthread_mutex_unlock(&(cwmp->mutex_session_send));
+ 				return;
+@@ -574,7 +578,9 @@ static void cwmp_schedule_session(struct cwmp *cwmp)
+ 		}
+ 		event_remove_all_event_container(session, RPC_SEND);
+ 		run_session_end_func();
++		pthread_mutex_lock(&(cwmp->mutex_session_queue));
+ 		cwmp_session_destructor(session);
++		pthread_mutex_unlock(&(cwmp->mutex_session_queue));
+ 		cwmp->session_send = NULL;
+ 		cwmp->retry_count_session = 0;
+ 		cwmp->session_status.last_end_time = time(NULL);
+diff --git a/heartbeat.c b/heartbeat.c
+index 7845ad6e..16dc01df 100644
+--- a/heartbeat.c
++++ b/heartbeat.c
+@@ -87,13 +87,17 @@ void *thread_heartbeat_session(void *v __attribute__((unused)))
+ 			struct rpc *rpc_acs;
+ 			rpc_acs = cwmp_add_session_rpc_acs_head(heartbeat_session, RPC_ACS_INFORM);
+ 			if (rpc_acs == NULL) {
++				pthread_mutex_lock(&(cwmp_main.mutex_session_queue));
+ 				cwmp_session_destructor(heartbeat_session);
++				pthread_mutex_unlock(&(cwmp_main.mutex_session_queue));
+ 				pthread_mutex_unlock(&mutex_heartbeat_session);
+ 				pthread_mutex_unlock(&mutex_heartbeat);
+ 				continue;
+ 			}
+ 			if (add_heart_beat_event(heartbeat_session) != 0) {
++				pthread_mutex_lock(&(cwmp_main.mutex_session_queue));
+ 				cwmp_session_destructor(heartbeat_session);
++				pthread_mutex_unlock(&(cwmp_main.mutex_session_queue));
+ 				pthread_mutex_unlock(&mutex_heartbeat_session);
+ 				pthread_mutex_unlock(&mutex_heartbeat);
+ 				continue;
+@@ -102,7 +106,9 @@ void *thread_heartbeat_session(void *v __attribute__((unused)))
+ 			if (heart_beat_session_status.last_status == SESSION_FAILURE) {
+ 				cwmp_config_load(&cwmp_main);
+ 				if (thread_end) {
++					pthread_mutex_lock(&(cwmp_main.mutex_session_queue));
+ 					cwmp_session_destructor(heartbeat_session);
++					pthread_mutex_unlock(&(cwmp_main.mutex_session_queue));
+ 					pthread_mutex_unlock(&mutex_heartbeat_session);
+ 					pthread_mutex_unlock(&mutex_heartbeat);
+ 					continue;
+@@ -124,7 +130,9 @@ void *thread_heartbeat_session(void *v __attribute__((unused)))
+ 			if (thread_end) {
+ 				event_remove_all_event_container(heartbeat_session, RPC_SEND);
+ 				run_session_end_func();
++				pthread_mutex_lock(&(cwmp_main.mutex_session_queue));
+ 				cwmp_session_destructor(heartbeat_session);
++				pthread_mutex_unlock(&(cwmp_main.mutex_session_queue));
+ 				pthread_mutex_unlock(&(cwmp_main.mutex_session_send));
+ 				pthread_mutex_unlock(&mutex_heartbeat);
+ 				// Exiting to avoid race conditions
+@@ -147,7 +155,9 @@ void *thread_heartbeat_session(void *v __attribute__((unused)))
+ 			}
+ 			event_remove_all_event_container(heartbeat_session, RPC_SEND);
+ 			run_session_end_func();
++			pthread_mutex_lock(&(cwmp_main.mutex_session_queue));
+ 			cwmp_session_destructor(heartbeat_session);
++			pthread_mutex_unlock(&(cwmp_main.mutex_session_queue));
+ 			heart_beat_retry_count_session = 0;
+ 			heart_beat_session_status.last_end_time = time(NULL);
+ 			heart_beat_session_status.last_status = SESSION_SUCCESS;
+-- 
+GitLab
+

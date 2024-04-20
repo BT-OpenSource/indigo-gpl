@@ -1,0 +1,95 @@
+diff --git a/dmdynamicjson.c b/dmdynamicjson.c
+index 39c73d1..0f5f272 100644
+--- a/dmdynamicjson.c
++++ b/dmdynamicjson.c
+@@ -959,7 +959,7 @@ static int ubus_set_operate(json_object *mapping_obj, int json_version, char *re
+ 		}
+ 	}
+ 
+-	dmubus_call_blob(buf_object, buf_method, in_args, &res);
++	int ubus_rc = dmubus_call_blob(buf_object, buf_method, in_args, &res);
+ 
+ 	if (in_args)
+ 		json_object_put(in_args);
+@@ -977,6 +977,8 @@ static int ubus_set_operate(json_object *mapping_obj, int json_version, char *re
+ 		json_object_put(res);
+ 	}
+ 
++	if (ubus_rc)
++		return CMD_FAIL;
+ 	return CMD_SUCCESS;
+ }
+ 
+@@ -1388,7 +1390,7 @@ static void uci_set_value(json_object *mapping_obj, int json_version, char *refp
+ 	}
+ }
+ 
+-static void ubus_set_value(json_object *mapping_obj, int json_version, char *refparam, struct dmctx *ctx, void *data, char *instance, char *value)
++static int ubus_set_value(json_object *mapping_obj, int json_version, char *refparam, struct dmctx *ctx, void *data, char *instance, char *value)
+ {
+ 	struct json_object *ubus_obj = NULL;
+ 	struct json_object *object = NULL;
+@@ -1415,9 +1417,10 @@ static void ubus_set_value(json_object *mapping_obj, int json_version, char *ref
+ 	if (args)
+ 		u_args_size = fill_ubus_arguments(ctx, data, instance, value, nbr_instances, json_version, args, u_args);
+ 
+-	dmubus_call_set(buf_object, buf_method, u_args, u_args_size);
++	int rc = dmubus_call_set(buf_object, buf_method, u_args, u_args_size);
+ 
+ 	free_ubus_arguments(u_args, u_args_size);
++	return rc;
+ }
+ 
+ static void uci_v1_set_value(json_object *mapping_obj, int json_version, char *refparam, struct dmctx *ctx, void *data, char *instance, char *value)
+@@ -1436,20 +1439,20 @@ static void uci_v1_set_value(json_object *mapping_obj, int json_version, char *r
+ 	}
+ }
+ 
+-static void set_value_from_mapping(json_object *param_obj, int json_version, char *refparam, struct dmctx *ctx, void *data, char *instance, char *value)
++static int set_value_from_mapping(json_object *param_obj, int json_version, char *refparam, struct dmctx *ctx, void *data, char *instance, char *value)
+ {
+ 	struct json_object *type_obj = NULL, *mapping_arr = NULL, *mapping = NULL;
+ 
+ 	if (!param_obj)
+-		return;
++		return -1;
+ 
+ 	json_object_object_get_ex(param_obj, "type", &type_obj);
+ 	if (!type_obj)
+-		return;
++		return -1;
+ 
+ 	char *type = json_object_get_string(type_obj);
+ 	if (!type)
+-		return;
++		return -1;
+ 
+ 	if (DM_LSTRCMP(type, "boolean") == 0) {
+ 		value = dmuci_string_to_boolean(value) ? "1" : "0";
+@@ -1471,14 +1474,15 @@ static void set_value_from_mapping(json_object *param_obj, int json_version, cha
+ 			if (type && strcmp(json_object_get_string(type), "uci") == 0)
+ 				uci_set_value(mapping, json_version, refparam, ctx, data, instance, value);
+ 			else if (type && strcmp(json_object_get_string(type), "ubus") == 0)
+-				ubus_set_value(mapping, json_version, refparam, ctx, data, instance, value);
++				return ubus_set_value(mapping, json_version, refparam, ctx, data, instance, value);
+ 			else if (type && strcmp(json_object_get_string(type), "uci_sec") == 0 && json_version == JSON_VERSION_1)
+ 				uci_v1_set_value(mapping, json_version, refparam, ctx, data, instance, value);
+ 			else
+-				return;
++				return -1;
+ 		}
+ 
+ 	}
++	return 0;
+ }
+ 
+ static int setvalue_param(char *refparam, struct dmctx *ctx, void *data, char *instance, char *value, int action)
+@@ -1503,7 +1507,7 @@ static int setvalue_param(char *refparam, struct dmctx *ctx, void *data, char *i
+ 				return FAULT_9007;
+ 			break;
+ 		case VALUESET:
+-			set_value_from_mapping(param_obj, json_version, refparam, ctx, data, instance, value);
++			return set_value_from_mapping(param_obj, json_version, refparam, ctx, data, instance, value);
+ 			break;
+ 	}
+ 

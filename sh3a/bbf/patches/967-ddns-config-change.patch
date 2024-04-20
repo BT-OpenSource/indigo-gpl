@@ -1,0 +1,12 @@
+diff --git a/dmtree/tr181/dynamicdns.c b/dmtree/tr181/dynamicdns.c
+index dbcc85b..986c60a 100644
+--- a/dmtree/tr181/dynamicdns.c
++++ b/dmtree/tr181/dynamicdns.c
+@@ -285,7 +285,6 @@ static int addObjDynamicDNSClient(char *refparam, struct dmctx *ctx, void *data,
+ 	dmuci_set_value_by_section(s, "check_unit", "minutes");
+ 	dmuci_set_value_by_section(s, "retry_interval", "60");
+ 	dmuci_set_value_by_section(s, "retry_unit", "value");
+-	dmuci_set_value_by_section(s, "ip_source", "interface");
+ 
+ 	dmuci_add_section_bbfdm("dmmap_ddns", "service", &dmmap_s);
+ 	dmuci_set_value_by_section(dmmap_s, "section_name", section_name(s));

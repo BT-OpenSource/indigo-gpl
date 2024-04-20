@@ -1,0 +1,13 @@
+Index: dslmngr-1.1.2/dslmngr_nl.c
+===================================================================
+--- dslmngr-1.1.2.orig/dslmngr_nl.c
++++ dslmngr-1.1.2/dslmngr_nl.c
+@@ -59,7 +59,7 @@ static int dslmngr_ubus_event(struct ubu
+ 	sscanf(message, "%32s '%512[^\n]s'", event, data);
+ 
+ 	/* ignore non-dsl events */
+-	if (!strstr(event, "dsl."))
++	if (!strstr(event, "dsl"))
+ 		return 0;
+ 
+ 	memset(&b, 0, sizeof(b));

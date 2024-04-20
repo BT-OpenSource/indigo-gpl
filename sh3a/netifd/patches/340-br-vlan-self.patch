@@ -1,0 +1,71 @@
+--- a/bridge.c
++++ b/bridge.c
+@@ -233,7 +233,7 @@ bridge_set_local_vlan(struct bridge_stat
+ 	if (!vlan->local && add)
+ 		return;
+ 
+-	system_bridge_vlan(bst->dev.ifname, vlan->vid, add, BRVLAN_F_SELF);
++	system_bridge_vlan(bst->dev.ifname, vlan->vid, add, vlan->local_flags | BRVLAN_F_SELF);
+ }
+ 
+ static void
+@@ -951,6 +951,7 @@ bridge_dump_vlan(struct blob_buf *b, str
+ 
+ 	blobmsg_add_u32(b, "id", vlan->vid);
+ 	blobmsg_add_u8(b, "local", vlan->local);
++	blobmsg_add_u32(b, "local_flags", vlan->local_flags);
+ 
+ 	p = blobmsg_open_array(b, "ports");
+ 
+--- a/device.h
++++ b/device.h
+@@ -293,6 +293,7 @@ struct bridge_vlan {
+ 
+ 	uint16_t vid;
+ 	bool local;
++	enum bridge_vlan_flags local_flags;
+ 	bool pending;
+ };
+ 
+--- a/config.c
++++ b/config.c
+@@ -312,6 +312,7 @@ config_parse_vlan(struct device *dev, st
+ 	enum {
+ 		BRVLAN_ATTR_VID,
+ 		BRVLAN_ATTR_LOCAL,
++		BRVLAN_ATTR_FLAGS,
+ 		BRVLAN_ATTR_PORTS,
+ 		BRVLAN_ATTR_ALIAS,
+ 		__BRVLAN_ATTR_MAX,
+@@ -319,6 +320,7 @@ config_parse_vlan(struct device *dev, st
+ 	static const struct blobmsg_policy vlan_attrs[__BRVLAN_ATTR_MAX] = {
+ 		[BRVLAN_ATTR_VID] = { "vlan", BLOBMSG_TYPE_INT32 },
+ 		[BRVLAN_ATTR_LOCAL] = { "local", BLOBMSG_TYPE_BOOL },
++		[BRVLAN_ATTR_FLAGS] = { "flags", BLOBMSG_TYPE_STRING },
+ 		[BRVLAN_ATTR_PORTS] = { "ports", BLOBMSG_TYPE_ARRAY },
+ 		[BRVLAN_ATTR_ALIAS] = { "alias", BLOBMSG_TYPE_ARRAY },
+ 	};
+@@ -338,6 +340,7 @@ config_parse_vlan(struct device *dev, st
+ 	unsigned int vid;
+ 	const char *val;
+ 	char *name_buf;
++	char *local_flags;
+ 	int name_len = 0;
+ 	int n_ports = 0;
+ 	int rem;
+@@ -371,6 +374,15 @@ config_parse_vlan(struct device *dev, st
+ 	if (tb[BRVLAN_ATTR_LOCAL])
+ 		vlan->local = blobmsg_get_bool(tb[BRVLAN_ATTR_LOCAL]);
+ 
++	if (tb[BRVLAN_ATTR_FLAGS]) {
++		local_flags = blobmsg_get_string(tb[BRVLAN_ATTR_FLAGS]);
++
++		if (strstr(local_flags, "pvid"))
++			vlan->local_flags |= BRVLAN_F_PVID;
++		if (strstr(local_flags, "untagged"))
++			vlan->local_flags |= BRVLAN_F_UNTAGGED;
++	}
++
+ 	vlan->n_ports = n_ports;
+ 	vlan->ports = port = (struct bridge_vlan_port *)&vlan[1];
+ 	INIT_LIST_HEAD(&vlan->hotplug_ports);

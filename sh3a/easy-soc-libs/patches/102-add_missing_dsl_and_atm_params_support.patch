@@ -1,0 +1,78 @@
+diff --git a/libdsl/broadcom/bcm_dsl_api.c b/libdsl/broadcom/bcm_dsl_api.c
+index edb4642..5b0188f 100644
+--- a/libdsl/broadcom/bcm_dsl_api.c
++++ b/libdsl/broadcom/bcm_dsl_api.c
+@@ -1290,6 +1290,8 @@ int dsl_get_line_stats_interval(int line_num, enum dsl_stats_type type, struct d
+ 		case DSL_STATS_CURRENTDAY:
+ 			stats->errored_secs = dsl_mib.adslPerfData.perfCurr1Day.adslESs;
+ 			stats->severely_errored_secs = dsl_mib.adslPerfData.perfCurr1Day.adslSES;
++			stats->loss_of_framing = dsl_mib.adslPerfData.perfCurr1Day.adslLofs;
++			stats->cell_delin = dsl_mib.adslPerfData.perfCurr1Day.adslLCDS;
+ 			break;
+ 		case DSL_STATS_QUARTERHOUR:
+ 			stats->errored_secs = dsl_mib.adslPerfData.perfCurr15Min.adslESs;
+@@ -1913,6 +1915,35 @@ int fast_get_line_stats_interval(int line_num, enum dsl_stats_type type, struct
+ 	return 0;
+ }
+ 
+-const struct atm_ops atm_funcs = {};
++int atm_get_link_stats(int link_num, struct atm_link_stats *stats)
++{
++	adslMibInfo dsl_mib;
++
++	if (link_num < 0 || link_num >= max_line_num)
++		return -1;
++
++	// Get the data
++	memset(&dsl_mib, 0, sizeof(dsl_mib));
++	if (bcm_xdsl_get_mib_info(&dsl_mib) != 0)
++		return -1;
++
++	// Initialize the output buffer
++	memset(stats, 0, sizeof(*stats));
++
++	/**
++	 *  Convert the values
++	 */
++	stats->transmitted_blocks = dsl_mib.adslChanIntlPerfData.perfTotal.adslChanTransmittedBlks;
++	stats->received_blocks = dsl_mib.adslChanIntlPerfData.perfTotal.adslChanReceivedBlks;
++	stats->crc_errors = dsl_mib.adslChanIntlPerfData.perfTotal.adslChanTxCRC;
++	stats->hec_errors = dsl_mib.atmStat.rcvStat.cntHEC + dsl_mib.atmStat.xmtStat.cntHEC;
++
++	return 0;
++}
++
++const struct atm_ops atm_funcs = {
++	.get_link_stats = atm_get_link_stats,
++};
++
+ const struct ptm_ops ptm_funcs = {};
+ 
+diff --git a/libdsl/xdsl.h b/libdsl/xdsl.h
+index 280b99c..f374df6 100644
+--- a/libdsl/xdsl.h
++++ b/libdsl/xdsl.h
+@@ -337,6 +337,10 @@ struct dsl_line_stats_interval {
+ 	unsigned int errored_secs;
+ 	/** Number of severely errored seconds */
+ 	unsigned int severely_errored_secs;
++	/** Loss of Framing */
++	unsigned int loss_of_framing;
++	/** Number of Lost Cell Delineation Errored Seconds */
++	unsigned int cell_delin;
+ };
+ 
+ /**
+diff --git a/libdsl/xtm.h b/libdsl/xtm.h
+index a366ca5..61ccde4 100644
+--- a/libdsl/xtm.h
++++ b/libdsl/xtm.h
+@@ -96,6 +96,8 @@ struct atm_link_stats {
+ 	unsigned int received_blocks;
+ 	/** Count of ATM layer CRC errors */
+ 	unsigned int crc_errors;
++	/** Count of ATM layer HEC errors */
++	unsigned int hec_errors;
+ };
+ 
+ /** enum atm_qos_class - ATM QoS used on the VC */

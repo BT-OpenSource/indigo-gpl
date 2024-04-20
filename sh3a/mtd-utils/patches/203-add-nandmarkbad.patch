@@ -1,0 +1,208 @@
+From patchwork Thu Aug 24 15:22:27 2017
+Content-Type: text/plain; charset="utf-8"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+X-Patchwork-Submitter: =?utf-8?q?Uwe_Kleine-K=C3=B6nig?= <ukleinek@debian.org>
+X-Patchwork-Id: 805531
+X-Patchwork-Delegate: david.oberhollenzer@sigma-star.at
+Return-Path: <linux-mtd-bounces+incoming=patchwork.ozlabs.org@lists.infradead.org>
+X-Original-To: incoming@patchwork.ozlabs.org
+Delivered-To: patchwork-incoming@bilbo.ozlabs.org
+Authentication-Results: ozlabs.org; spf=none (mailfrom)
+ smtp.mailfrom=lists.infradead.org (client-ip=65.50.211.133;
+ helo=bombadil.infradead.org;
+ envelope-from=linux-mtd-bounces+incoming=patchwork.ozlabs.org@lists.infradead.org;
+ receiver=<UNKNOWN>)
+Authentication-Results: ozlabs.org; dkim=pass (2048-bit key;
+ unprotected) header.d=lists.infradead.org
+ header.i=@lists.infradead.org header.b="RDZ4ISXr"; 
+ dkim-atps=neutral
+Received: from bombadil.infradead.org (bombadil.infradead.org [65.50.211.133])
+ (using TLSv1.2 with cipher ECDHE-RSA-AES256-GCM-SHA384 (256/256
+ bits)) (No client certificate requested)
+ by ozlabs.org (Postfix) with ESMTPS id 3xdSjX3f9Gz9sCZ
+ for <incoming@patchwork.ozlabs.org>;
+ Fri, 25 Aug 2017 01:23:12 +1000 (AEST)
+DKIM-Signature: v=1; a=rsa-sha256; q=dns/txt; c=relaxed/relaxed;
+ d=lists.infradead.org; s=bombadil.20170209; h=Sender:
+ Content-Transfer-Encoding:Content-Type:MIME-Version:Cc:List-Subscribe:
+ List-Help:List-Post:List-Archive:List-Unsubscribe:List-Id:Message-Id:Date:
+ Subject:To:From:Reply-To:Content-ID:Content-Description:Resent-Date:
+ Resent-From:Resent-Sender:Resent-To:Resent-Cc:Resent-Message-ID:In-Reply-To:
+ References:List-Owner; bh=CUO/UdIsN8sZUVXn+qAEMLtmjKbMrbj7xceWbKdvZcs=;
+ b=RDZ
+ 4ISXrlkpe6O9VdoTYTviF7rk2hnzIw7xhmPmZvle/xvGDxXbtIDKXl+MShrOYKbq8possD+jvu9jR
+ V5C+zciM7cPI7yfD3fzEsZYyE3bupG6KcP+PSEe9TvNCTspW94w9rz1b6kH2Wx6lJ/g3BKZPaRCkv
+ 1h2/qR6UTEu5/p7qypaP93GTYlkcPagSXGqS8mFvfdKzXEm+oRgKgkkc6ynHj1tYB0FAIjLTvHRiX
+ aSwjkraH/dquTBkQVL7ponrKq3J+/dDUXpizUBYKhNtOuIdpTy+Dr3v+pR4gfun4c0LC0onKOeH9I
+ lSr1hOqE1SNMgluu1ReXppo2VEqkluQ==;
+Received: from localhost ([127.0.0.1] helo=bombadil.infradead.org)
+ by bombadil.infradead.org with esmtp (Exim 4.87 #1 (Red Hat Linux))
+ id 1dktyI-0003lk-WC; Thu, 24 Aug 2017 15:23:03 +0000
+Received: from arcturus.kleine-koenig.org ([78.47.169.190])
+ by bombadil.infradead.org with esmtps (Exim 4.87 #1 (Red Hat Linux))
+ id 1dktyF-0003Ob-Oo
+ for linux-mtd@lists.infradead.org; Thu, 24 Aug 2017 15:23:01 +0000
+Received: by arcturus.kleine-koenig.org (Postfix, from userid 1000)
+ id 2F7F319E99F; Thu, 24 Aug 2017 17:22:35 +0200 (CEST)
+From: =?UTF-8?q?Uwe=20Kleine-K=C3=B6nig?= <ukleinek@debian.org>
+To: David Oberhollenzer <david.oberhollenzer@sigma-star.at>
+Subject: [PATCH mtd-utils] nandmarkbad: new util to mark blocks as bad
+Date: Thu, 24 Aug 2017 17:22:27 +0200
+Message-Id: <20170824152227.30394-1-ukleinek@debian.org>
+X-Mailer: git-send-email 2.14.1
+X-CRM114-Version: 20100106-BlameMichelson ( TRE 0.8.0 (BSD) ) MR-646709E3 
+X-CRM114-CacheID: sfid-20170824_082259_980808_583F6639 
+X-CRM114-Status: GOOD (  15.16  )
+X-Spam-Score: -1.9 (-)
+X-Spam-Report: SpamAssassin version 3.4.1 on bombadil.infradead.org summary:
+ Content analysis details:   (-1.9 points)
+ pts rule name              description
+ ---- ----------------------
+ --------------------------------------------------
+ -0.0 RP_MATCHES_RCVD Envelope sender domain matches handover relay
+ domain
+ 0.0 HEADER_FROM_DIFFERENT_DOMAINS From and EnvelopeFrom 2nd level
+ mail domains are different
+ -1.9 BAYES_00               BODY: Bayes spam probability is 0 to 1%
+ [score: 0.0000]
+X-BeenThere: linux-mtd@lists.infradead.org
+X-Mailman-Version: 2.1.21
+Precedence: list
+List-Id: Linux MTD discussion mailing list <linux-mtd.lists.infradead.org>
+List-Unsubscribe: <http://lists.infradead.org/mailman/options/linux-mtd>,
+ <mailto:linux-mtd-request@lists.infradead.org?subject=unsubscribe>
+List-Archive: <http://lists.infradead.org/pipermail/linux-mtd/>
+List-Post: <mailto:linux-mtd@lists.infradead.org>
+List-Help: <mailto:linux-mtd-request@lists.infradead.org?subject=help>
+List-Subscribe: <http://lists.infradead.org/mailman/listinfo/linux-mtd>,
+ <mailto:linux-mtd-request@lists.infradead.org?subject=subscribe>
+Cc: linux-mtd@lists.infradead.org
+MIME-Version: 1.0
+Sender: "linux-mtd" <linux-mtd-bounces@lists.infradead.org>
+Errors-To: linux-mtd-bounces+incoming=patchwork.ozlabs.org@lists.infradead.org
+
+---
+ nand-utils/Makemodule.am |  5 ++-
+ nand-utils/nandmarkbad.c | 95 ++++++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 100 insertions(+), 1 deletion(-)
+ create mode 100644 nand-utils/nandmarkbad.c
+
+diff --git a/nand-utils/Makemodule.am b/nand-utils/Makemodule.am
+index d75b0cb3e36c..c31dcb01f06e 100644
+--- a/nand-utils/Makemodule.am	2020-04-12 17:16:47.218395668 +0200
++++ b/nand-utils/Makemodule.am.new	2020-04-12 17:16:43.854388945 +0200
+@@ -16,8 +16,11 @@ nftl_format_LDADD = libmtd.a
+ imagewrite_SOURCES = nand-utils/imagewrite.c
+ imagewrite_LDADD = libmtd.a
+ 
++nandmarkbad_SOURCES = nand-utils/nandmarkbad.c
++nandmarkbad_LDADD = libmtd.a
++
+ NAND_BINS = \
+-	nanddump nandwrite nandtest nftldump nftl_format imagewrite
++	nanddump nandwrite nandtest nftldump nftl_format imagewrite nandmarkbad
+ 
+ NAND_SH = \
+ 	nand-utils/load_nandsim.sh
+diff --git a/nand-utils/nandmarkbad.c b/nand-utils/nandmarkbad.c
+new file mode 100644
+index 000000000000..023bdbe50c4d
+--- /dev/null
++++ b/nand-utils/nandmarkbad.c
+@@ -0,0 +1,95 @@
++#define PROGRAM_NAME "nandmarkbad"
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <unistd.h>
++#include <getopt.h>
++
++#include "common.h"
++#include <libmtd.h>
++
++void usage(int status)
++{
++	fprintf(status ? stderr : stdout,
++		"usage: %s [OPTIONS] <device>\n\n"
++		"  -b, --markbad=blockno        Mark block bad\n"
++		PROGRAM_NAME);
++	exit(status);
++}
++
++/*
++ * Main program
++ */
++int main(int argc, char **argv)
++{
++	loff_t mark_bad[32];
++	unsigned cnt_bad = 0;
++	struct mtd_dev_info mtd;
++	libmtd_t mtd_desc;
++	int fd;
++	int error = 0;
++	int ret;
++	unsigned int i;
++
++	for (;;) {
++		static const char short_options[] = "b:h";
++		static const struct option long_options[] = {
++			{ "markbad", required_argument, 0, 'b' },
++			{0, 0, 0, 0},
++		};
++		int option_index = 0;
++		int c = getopt_long(argc, argv, short_options, long_options,
++				    &option_index);
++		if (c == EOF)
++			break;
++
++		switch (c) {
++		case 'h':
++			usage(EXIT_SUCCESS);
++			break;
++		case '?':
++			usage(EXIT_FAILURE);
++			break;
++
++		case 'b':
++			if (cnt_bad < ARRAY_SIZE(mark_bad)) {
++				mark_bad[cnt_bad] =
++					simple_strtoll(optarg, &error);
++				++cnt_bad;
++			} else {
++				errmsg_die("Can't handle so many bad blocks\n");
++			}
++
++			break;
++		}
++	}
++
++	argc -= optind;
++	argv += optind;
++
++	if (argc != 1 || error)
++		usage(EXIT_FAILURE);
++
++	if (!cnt_bad)
++		errmsg_die("You must specify at least one block to mark bad\n");
++
++	fd = open(argv[0], O_RDWR);
++	if (fd < 0)
++		sys_errmsg_die("Failed to open mtd device\n");
++
++	mtd_desc = libmtd_open();
++	if (!mtd_desc)
++		errmsg_die("Can't initialize libmtd");
++
++	if (mtd_get_dev_info(mtd_desc, argv[0], &mtd) < 0)
++		errmsg_die("mtd_get_dev_info failed");
++
++	for (i = 0; i < cnt_bad; ++i) {
++		ret = mtd_mark_bad(&mtd, fd, mark_bad[i]);
++		if (ret)
++			sys_errmsg_die("%s: MTD Mark bad block failure",
++				       argv[0]);
++	}
++
++	return EXIT_SUCCESS;
++}

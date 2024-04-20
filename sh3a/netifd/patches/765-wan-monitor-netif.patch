@@ -1,0 +1,76 @@
+diff --git a/interface.c b/interface.c
+index ca5f09a..b508408 100644
+--- a/interface.c
++++ b/interface.c
+@@ -757,6 +757,13 @@ static void
+ interface_proto_event_cb(struct interface_proto_state *state, enum interface_proto_event ev)
+ {
+ 	struct interface *iface = state->iface;
++	const char *name = "wan_ok";
++	struct interface_data *o = NULL;
++	bool wstate = false;
++
++        if ((o = avl_find_element(&iface->data, name, o, node)) != NULL) {
++                wstate = true;
++        }
+ 
+ 	switch (ev) {
+ 	case IFPEV_UP:
+@@ -778,8 +785,13 @@ interface_proto_event_cb(struct interface_proto_state *state, enum interface_pro
+ 		netifd_log_message(L_NOTICE, "Interface '%s' is now up\n", iface->name);
+ 		break;
+ 	case IFPEV_DOWN:
+-		if (iface->state == IFS_DOWN)
++		/* If in wan monitor mode then send ifdown anyway */
++		if (iface->state == IFS_DOWN && !wstate) {
+ 			return;
++		} else if (wstate) {
++			netifd_log_message(L_NOTICE, "In WAN monitor mode \n");
++			interface_event(iface, IFEV_DOWN);
++		}
+ 
+ 		netifd_log_message(L_NOTICE, "Interface '%s' is now down\n", iface->name);
+ 		mark_interface_down(iface);
+diff --git a/ubus.c b/ubus.c
+index 8a0c53a..b9d303e 100644
+--- a/ubus.c
++++ b/ubus.c
+@@ -1307,6 +1307,13 @@ netifd_handle_wdev_notify(struct ubus_context *ctx, struct ubus_object *obj,
+ 	return wireless_device_notify(wdev, msg, req);
+ }
+ 
++static void
++netifd_interface_data_del(struct interface *iface, struct interface_data *data)
++{
++        avl_delete(&iface->data, &data->node);
++        free(data);
++}
++
+ static struct ubus_method wireless_object_methods[] = {
+ 	{ .name = "up", .handler = netifd_handle_wdev_up },
+ 	{ .name = "down", .handler = netifd_handle_wdev_down },
+@@ -1365,9 +1372,24 @@ netifd_ubus_done(void)
+ void
+ netifd_ubus_interface_event(struct interface *iface, bool up)
+ {
++	const char *name = "wan_ok";
++	struct interface_data *o = NULL;
++
+ 	blob_buf_init(&b, 0);
+ 	blobmsg_add_string(&b, "action", up ? "ifup" : "ifdown");
+ 	blobmsg_add_string(&b, "interface", iface->name);
++
++        /* If WAN monitor mode is success send an extra attribute
++         * wan_ok for ubus listener to differentiate from atual
++         * ifup event
++         */
++	if((o = avl_find_element(&iface->data, name, o, node)) != NULL) {
++            netifd_log_message(L_NOTICE, "WAN monitor mode, sending ifdown event");
++            blobmsg_add_u8(&b, "wan_ok", 1);
++
++            /* Delete the attribute from iface->data after its use */
++            netifd_interface_data_del(iface, o);
++        }
+ 	ubus_send_event(ubus_ctx, "network.interface", b.head);
+ }
+ 

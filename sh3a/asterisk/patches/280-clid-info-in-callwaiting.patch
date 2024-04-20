@@ -1,0 +1,70 @@
+--- a/channels/chan_brcm.h
++++ b/channels/chan_brcm.h
+@@ -161,7 +161,7 @@
+ struct brcm_channel_tech {
+ 	int (* signal_ringing)(struct brcm_pvt *p);
+ 	int (* signal_ringing_callerid_pending)(struct brcm_pvt *p);
+-	int (* signal_callerid)(struct ast_channel *chan, struct brcm_subchannel *s);
++	int (* signal_callerid)(struct ast_channel *chan, struct brcm_subchannel *s, int callwt);
+ 	int (* stop_ringing)(struct brcm_pvt *p);
+ 	int (* stop_ringing_callerid_pending)(struct brcm_pvt *p);
+ 	int (* release)(struct brcm_pvt *p);
+--- a/channels/chan_brcm.c
++++ b/channels/chan_brcm.c
+@@ -114,7 +114,7 @@
+ static int brcm_stop_ringing_callerid_pending(struct brcm_pvt *p);
+ static int brcm_signal_callwaiting(const struct brcm_pvt *p);
+ static int brcm_stop_callwaiting(const struct brcm_pvt *p);
+-static int brcm_signal_callerid(struct ast_channel *chan, struct brcm_subchannel *sub);
++static int brcm_signal_callerid(struct ast_channel *chan, struct brcm_subchannel *sub, int callwt);
+ static struct brcm_subchannel *brcm_get_idle_subchannel(const struct brcm_pvt *p);
+ static struct brcm_subchannel* brcm_get_active_subchannel(const struct brcm_pvt *p);
+ static struct brcm_subchannel *brcm_subchannel_get_peer(const struct brcm_subchannel *sub);
+@@ -1253,7 +1253,8 @@
+ 		is_call_waiting_enabled(p->context)) {			// call waiting enabled
+ 		ast_debug(1, "Call waiting\n");
+ 		sub->channel_state = CALLWAITING;
+-		brcm_signal_callwaiting(p);
++		p->tech->signal_callerid(chan, sub, 1);
++		brcm_send_ubus_event("CALLWAITING",p->line_id);
+ 		int cwtimeout_ms = cwtimeout * 1000;
+ 		int cwBeep_ms = cwBeep * 1000;
+ 		sub->cw_timer_id = ast_sched_add(sched, cwtimeout_ms, cwtimeout_cb, sub);
+@@ -1295,7 +1296,7 @@
+ 			p->tech->signal_ringing(p);
+ 		} else {
+ 			p->tech->signal_ringing_callerid_pending(p);
+-			p->tech->signal_callerid(chan, sub);
++			p->tech->signal_callerid(chan, sub, 0);
+ 		}
+ 
+ 		if (has_call_in_sip_client(p->context)) {
+@@ -3440,7 +3441,7 @@
+ 				endpt_connection(sub_peer->parent->line_id, sub_peer->call_id, "destroy");
+ 				usleep(500000);
+ 				p->tech->signal_ringing_callerid_pending(p);
+-				p->tech->signal_callerid(sub_peer->owner, sub_peer);
++				p->tech->signal_callerid(sub_peer->owner, sub_peer, 0);
+ 				sub->channel_state = RINGING;
+ 				ast_queue_control(peer_owner, AST_CONTROL_RINGING);
+ 				brcm_send_ubus_event("RINGING",p->line_id);
+@@ -5086,7 +5087,7 @@
+  * 'O' in number or name => not available
+  * 'P' in number or name => presentation not allowed
+  */
+-static int brcm_signal_callerid(struct ast_channel *chan, struct brcm_subchannel *sub)
++static int brcm_signal_callerid(struct ast_channel *chan, struct brcm_subchannel *sub, int callwt)
+ {
+ 	if (channel_config[sub->parent->line_id].ringsignal) {
+ 		CLID_STRING clid_string;
+@@ -5153,7 +5154,10 @@
+ 		clid_string.number_name[str_length++] = '\0';
+ 
+ 		ast_debug(2, "CLIP info: caller number [%s], caller name [%s], final string [%s]\n", number, name, (char *)&clid_string);
+-		endpt_signal(sub->parent->line_id, "callid", "on", (char *)&clid_string);
++		if (callwt)
++			endpt_signal(sub->parent->line_id, "callwt", "on", (char *)&clid_string);
++		else
++			endpt_signal(sub->parent->line_id, "callid", "on", (char *)&clid_string);
+ 		return 0;
+ 	}

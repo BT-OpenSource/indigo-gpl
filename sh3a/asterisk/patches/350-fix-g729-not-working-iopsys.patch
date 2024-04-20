@@ -1,0 +1,40 @@
+--- a/channels/chan_brcm.c
++++ b/channels/chan_brcm.c
+@@ -1892,6 +1892,11 @@ static struct ast_channel *brcm_new(stru
+ 		ast_channel_set_rawwriteformat(chan, fmt);
+ 		ast_channel_set_readformat(chan, fmt);
+ 		ast_channel_set_rawreadformat(chan, fmt);
++		if (subchan->call_direction != OUTGOING_CALL){
++			// set default codec for incoming call to avoid transcoding
++			ast_channel_codec_set(chan, ast_format_get_name(fmt));
++			ast_log(LOG_NOTICE, "set local codec to :%s \n", ast_channel_codec_get(chan));
++		}
+ 
+ 		/* no need to call ast_setstate: the channel_alloc already did its job */
+ 		if (state == AST_STATE_RING)
+--- a/channels/chan_pjsip.c
++++ b/channels/chan_pjsip.c
+@@ -975,7 +975,7 @@ static int chan_pjsip_write_stream(struc
+ 			struct ast_str *write_transpath = ast_str_alloca(256);
+ 			struct ast_str *read_transpath = ast_str_alloca(256);
+ 
+-			ast_log(LOG_WARNING,
++			ast_debug(3,
+ 				"Channel %s asked to send %s frame when native formats are %s (rd:%s->%s;%s wr:%s->%s;%s)\n",
+ 				ast_channel_name(ast),
+ 				ast_format_get_name(frame->subclass.format),
+--- a/main/channel.c
++++ b/main/channel.c
+@@ -5736,10 +5736,10 @@ static int set_format(struct ast_channel
+ 		ast_channel_unlock(chan);
+ 		ast_format_cap_get_names(cap_set, &codec_set);
+ 
+-		ast_log(LOG_WARNING, "Unable to find a codec translation path: %s -> %s\n",
++		ast_debug(3, "Skip a codec translation: %s -> %s\n",
+ 			ast_str_buffer(direction ? codec_set : codec_native),
+ 			ast_str_buffer(direction ? codec_native : codec_set));
+-		return -1;
++		return 0;
+ 	}
+ 
+ 	/* Now we have a good choice for both. */

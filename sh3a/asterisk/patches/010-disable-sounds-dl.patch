@@ -1,0 +1,10 @@
+--- a/Makefile
++++ b/Makefile
+@@ -469,7 +469,6 @@
+ 	for x in images/*.jpg; do \
+ 		$(INSTALL) -m 644 $$x "$(DESTDIR)$(ASTDATADIR)/images" ; \
+ 	done
+-	$(MAKE) -C sounds install
+ 	find rest-api -name "*.json" | while read x; do \
+ 		$(INSTALL) -m 644 $$x "$(DESTDIR)$(ASTDATADIR)/rest-api" ; \
+ 	done

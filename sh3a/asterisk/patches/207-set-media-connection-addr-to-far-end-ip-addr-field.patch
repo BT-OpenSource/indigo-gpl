@@ -1,0 +1,13 @@
+--- a/res/res_pjsip_session.c
++++ b/res/res_pjsip_session.c
+@@ -1074,8 +1074,8 @@ static int handle_negotiated_sdp(struct
+ 	unsigned int changed = 0; /* 0 = unchanged, 1 = new source, 2 = new topology */
+ 	SCOPE_ENTER(1, "%s\n", ast_sip_session_get_name(session));
+ 
+-	if (session && session->channel)
+-		ast_channel_farEndIPAddress_set(session->channel, pj_strbuf(&remote->origin.addr), pj_strlen(&remote->origin.addr));
++	if (session && session->channel && remote && remote->conn)
++		ast_channel_farEndIPAddress_set(session->channel, pj_strbuf(&remote->conn->addr), pj_strlen(&remote->conn->addr));
+ 
+ 	if (!session->pending_media_state->topology) {
+ 		if (session->active_media_state->topology) {

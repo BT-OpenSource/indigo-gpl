@@ -1,0 +1,129 @@
+--- a/src/forward.c
++++ b/src/forward.c
+@@ -105,6 +105,17 @@ int send_from(int fd, int nowild, char *
+   
+   return 1;
+ }
++
++static inline struct domain_record *get_prioritized_domain_rec(const char *dname, struct domain_record *domain_prioritized)
++{
++  struct domain_record *ptr;
++
++  for (ptr = domain_prioritized; ptr; ptr = ptr->next)
++    if (!strcmp(dname, ptr->domain))
++      return ptr;
++
++  return NULL;
++}
+           
+ static unsigned int search_servers(time_t now, union all_addr **addrpp, unsigned int qtype,
+ 				   char *qdomain, int *type, char **domain, int *norebind)
+@@ -256,6 +267,13 @@ static void set_outgoing_mark(struct fre
+ }
+ #endif
+ 
++static inline void set_priority(int fd, int tos, int cos)
++{
++  /*  Set the Type-Of-Service (TOS) field and Class Of Service (CoS) priority to be sent on this socket */
++  setsockopt(fd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos));
++  setsockopt(fd, SOL_SOCKET, SO_PRIORITY, &cos, sizeof(cos));
++}
++
+ static void log_query_mysockaddr(unsigned int flags, char *name, union mysockaddr *addr, char *arg)
+ {
+   if (addr->sa.sa_family == AF_INET)
+@@ -566,6 +584,7 @@ static int forward_query(int udpfd, unio
+ 	  if (server_test_type(start, domain, type, 0) &&
+ 	      ((fd = allocate_rfd(&forward->rfds, start)) != -1))
+ 	    {
++		  struct domain_record *domain;
+ 	      
+ #ifdef HAVE_CONNTRACK
+ 	      /* Copy connection mark of incoming query to outgoing connection. */
+@@ -573,6 +592,10 @@ static int forward_query(int udpfd, unio
+ 		set_outgoing_mark(forward, fd);
+ #endif
+ 	      
++	      domain = get_prioritized_domain_rec(daemon->namebuff, daemon->prioritized_domains);
++	      if (domain)
++		set_priority(fd, domain->tos, domain->cos);
++
+ #ifdef HAVE_DNSSEC
+ 	      if (option_bool(OPT_DNSSEC_VALID) && (forward->flags & FREC_ADDED_PHEADER))
+ 		{
+--- a/src/dnsmasq.h
++++ b/src/dnsmasq.h
+@@ -371,6 +371,12 @@ struct ptr_record {
+   struct ptr_record *next;
+ };
+ 
++struct domain_record {
++  char *domain;
++  int tos, cos;
++  struct domain_record *next;
++};
++
+ struct cname {
+   int ttl, flag;
+   char *alias, *target;
+@@ -1032,6 +1038,7 @@ extern struct daemon {
+   struct naptr *naptr;
+   struct txt_record *txt, *rr;
+   struct ptr_record *ptr;
++  struct domain_record *prioritized_domains;
+   struct host_record *host_records, *host_records_tail;
+   struct cname *cnames;
+   struct auth_zone *auth_zones;
+--- a/src/option.c
++++ b/src/option.c
+@@ -171,6 +171,7 @@ struct myoption {
+ #define LOPT_DYNHOST       362
+ #define LOPT_LOG_DEBUG     363
+ #define LOPT_USER_HOSTNAME 364
++#define LOPT_PRIORITIZED_DOMAIN_NAMES 365
+  
+ #ifdef HAVE_GETOPT_LONG
+ static const struct option opts[] =  
+@@ -347,6 +348,7 @@ static const struct myoption opts[] =
+     { "dynamic-host", 1, 0, LOPT_DYNHOST },
+     { "log-debug", 0, 0, LOPT_LOG_DEBUG },
+     { "add-userhostname", 1, 0, LOPT_USER_HOSTNAME},
++    { "prioritised-domain", 1, 0, LOPT_PRIORITIZED_DOMAIN_NAMES},
+     { NULL, 0, 0, 0 }
+   };
+ 
+@@ -530,6 +532,7 @@ static struct {
+   { LOPT_DUMPMASK, ARG_ONE, "<hex>", gettext_noop("Mask which packets to dump"), NULL },
+   { LOPT_SCRIPT_TIME, OPT_LEASE_RENEW, NULL, gettext_noop("Call dhcp-script when lease expiry changes."), NULL },
+   { LOPT_USER_HOSTNAME, ARG_ONE, "<host_name>", gettext_noop("Default hostname if no hostname provided by the DHCP client."), NULL },
++  { LOPT_PRIORITIZED_DOMAIN_NAMES, ARG_DUP, "<domain_name>,<tos>,<cos>", gettext_noop("Set tos/cos priority of domain_name"), NULL },
+   { 0, 0, NULL, NULL, NULL }
+ }; 
+ 
+@@ -2120,6 +2123,26 @@ static int one_opt(int option, char *arg
+ 	} while (arg);
+ 	break;
+       }
++
++    case LOPT_PRIORITIZED_DOMAIN_NAMES: /* --prioritised-domain */
++      {
++	struct domain_record *new;
++	char *tos, *cos = NULL;
++
++	tos = split(arg);
++	if (tos)
++	  cos = split(tos);
++	if (!cos)
++	  ret_err(_("bad parameters - tos or cos missed"));
++
++	new = opt_malloc(sizeof(struct domain_record));
++	new->domain = opt_string_alloc(arg);
++	new->tos = (u32)atoi(tos);
++	new->cos = (u32)atoi(cos);
++	new->next = daemon->prioritized_domains;
++	daemon->prioritized_domains = new;
++	break;
++      }
+ 	
+     case LOPT_AUTHZONE: /* --auth-zone */
+       {
