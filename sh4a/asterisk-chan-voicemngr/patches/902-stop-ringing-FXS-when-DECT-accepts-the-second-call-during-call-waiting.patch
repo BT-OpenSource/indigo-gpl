@@ -1,0 +1,16 @@
+--- a/src/channels/chan_voicemngr.c
++++ b/src/channels/chan_voicemngr.c
+@@ -3759,7 +3759,12 @@ static void chan_voicemngr_process_event
+ 			if (sub_peer->channel_state == CALLWAITING) {
+ 				/* Remind user of waiting call */
+ 				sub_peer->channel_state = RINGING;
+-				p->tech->signal_ringing(p);
++				if (!channel_config[p->line_id].calleridenable) {
++					p->tech->signal_ringing(p);
++				} else {
++					p->tech->signal_ringing_callerid_pending(p);
++					p->tech->signal_callerid(sub_peer->owner, sub_peer, 0);
++				}
+ 				chan_voicemngr_send_ubus_event("RINGING",p->line_id);
+ 			} else if (peer_owner && sub_peer->channel_state == ONHOLD) {
+ 				if (p->flags & VOICEMNGR_CHAN_FLAG_ATTENDED_TRANSFER) {

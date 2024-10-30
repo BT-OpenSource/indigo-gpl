@@ -5,17 +5,27 @@ Subject: [PATCH] Fork procd and run sysupgrade in child process
 
 Only modify the environment of the child process. Chroot in
 child.
+
+procd: Fix sysupgrade service stop
 ---
- system.c            |   3 +-
+ system.c            |   5 -
  sysupgrade.c        | 126 +++++++++++++++++++++-----------------------
  upgraded/upgraded.c |  10 ----
- 3 files changed, 62 insertions(+), 77 deletions(-)
+ 3 files changed, 62 insertions(+), 79 deletions(-)
 
 diff --git a/system.c b/system.c
 index 0fb98f1..caee8ab 100644
 --- a/system.c
 +++ b/system.c
-@@ -701,8 +701,7 @@ static int sysupgrade(struct ubus_context *ctx, struct ubus_object *obj,
+@@ -811,16 +811,13 @@ static int sysupgrade(struct ubus_contex
+ 		return UBUS_STATUS_NOT_SUPPORTED;
+ 	}
+ 
+-	service_stop_all();
+-
+ 	sysupgrade_exec_upgraded(blobmsg_get_string(tb[SYSUPGRADE_PREFIX]),
+ 				 blobmsg_get_string(tb[SYSUPGRADE_PATH]),
+ 				 tb[SYSUPGRADE_BACKUP] ? blobmsg_get_string(tb[SYSUPGRADE_BACKUP]) : NULL,
  				 tb[SYSUPGRADE_COMMAND] ? blobmsg_get_string(tb[SYSUPGRADE_COMMAND]) : NULL,
  				 tb[SYSUPGRADE_OPTIONS]);
  

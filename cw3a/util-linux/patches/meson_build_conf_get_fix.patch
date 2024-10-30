@@ -1,0 +1,11 @@
+--- ./meson.build	2023-09-21 13:39:03.116146288 +0200
++++ ./meson.build_new	2023-09-21 13:38:59.660431122 +0200
+@@ -406,7 +406,7 @@ enable_btrfs = cc.has_header(header,
+ conf.set('HAVE_' + header.underscorify().to_upper(), enable_btrfs ? 1 : false)
+ conf.set('HAVE_BTRFS_SUPPORT', enable_btrfs ? 1 : false)
+ 
+-prefix = conf.get('HAVE_LINUX_COMPILER_H') ? '#include <linux/compiler.h>' : ''
++prefix = conf.has('HAVE_LINUX_COMPILER_H') ? '#include <linux/compiler.h>' : ''
+ foreach header : [
+   'linux/blkpg.h',
+   'linux/major.h',

@@ -1,0 +1,36 @@
+Index: a/extensions/LUA/lua/llex.c
+===================================================================
+--- a/extensions/LUA/lua/llex.c
++++ b/extensions/LUA/lua/llex.c
+@@ -365,6 +365,7 @@ static int llex (LexState *ls, SemInfo *
+         else if (sep == -1) return '[';
+         else luaX_lexerror(ls, "invalid long string delimiter", TK_STRING);
+         // fall through
++	__attribute__((__fallthrough__));
+       }
+       case '=': {
+         next(ls);
+Index: a/extensions/LUA/lua/ltable.c
+===================================================================
+--- a/extensions/LUA/lua/ltable.c
++++ b/extensions/LUA/lua/ltable.c
+@@ -476,6 +476,7 @@ const TValue *luaH_get (Table *t, const
+       if (luai_numeq(cast_num(k), nvalue(key))) /* index is int? */
+         return luaH_getnum(t, k);  /* use specialized version */
+       // fall through
++      __attribute__((__fallthrough__));
+     }
+     default: {
+       Node *n = mainposition(t, key);
+Index: a/extensions/LUA/lua/ldebug.c
+===================================================================
+--- a/extensions/LUA/lua/ldebug.c
++++ b/extensions/LUA/lua/ldebug.c
+@@ -412,6 +412,7 @@ static Instruction symbexec (const Proto
+       case OP_FORPREP:
+         checkreg(pt, a+3);
+         // fall through
++	__attribute__((__fallthrough__));
+       case OP_JMP: {
+         int dest = pc+1+b;
+         /* not full check and jump is forward and do not skip `lastpc'? */

@@ -1,0 +1,101 @@
+--- a/communication.c
++++ b/communication.c
+@@ -481,6 +481,16 @@ ebt_translate_entry(struct ebt_entry *e,
+ 		memcpy(new->sourcemsk, e->sourcemsk, sizeof(new->sourcemsk));
+ 		memcpy(new->destmac, e->destmac, sizeof(new->destmac));
+ 		memcpy(new->destmsk, e->destmsk, sizeof(new->destmsk));
++#if 1//defined(TCSUPPORT_PON_MAC_FILTER)
++		memset(new->sourcemacstart, 0, sizeof(new->sourcemacstart));
++		memset(new->sourcestartmsk, 0, sizeof(new->sourcestartmsk));
++		memset(new->sourcemacend, 0, sizeof(new->sourcemacend));
++		memset(new->sourceendmsk, 0, sizeof(new->sourceendmsk));
++		memset(new->destmacstart, 0, sizeof(new->destmacstart));
++		memset(new->deststartmsk, 0, sizeof(new->deststartmsk));
++		memset(new->destmacend, 0, sizeof(new->destmacend));
++		memset(new->destendmsk, 0, sizeof(new->destendmsk));
++#endif
+ 		if (*totalcnt >= u_repl->nentries)
+ 			ebt_print_bug("*totalcnt >= u_repl->nentries");
+ 		new->cnt = u_repl->counters[*totalcnt];
+--- a/include/ebtables_u.h
++++ b/include/ebtables_u.h
+@@ -130,6 +130,16 @@ struct ebt_u_entry
+ 	unsigned char sourcemsk[ETH_ALEN];
+ 	unsigned char destmac[ETH_ALEN];
+ 	unsigned char destmsk[ETH_ALEN];
++#if 1//defined(TCSUPPORT_PON_MAC_FILTER)
++	unsigned char sourcemacstart[ETH_ALEN];
++	unsigned char sourcestartmsk[ETH_ALEN];
++	unsigned char sourcemacend[ETH_ALEN];
++	unsigned char sourceendmsk[ETH_ALEN];
++	unsigned char destmacstart[ETH_ALEN];
++	unsigned char deststartmsk[ETH_ALEN];
++	unsigned char destmacend[ETH_ALEN];
++	unsigned char destendmsk[ETH_ALEN];
++#endif
+ 	struct ebt_u_match_list *m_list;
+ 	struct ebt_u_watcher_list *w_list;
+ 	struct ebt_entry_target *t;
+--- a/include/linux/netfilter_bridge/ebtables.h
++++ b/include/linux/netfilter_bridge/ebtables.h
+@@ -106,8 +106,21 @@ struct ebt_entries {
+ #define EBT_802_3 0x04
+ #define EBT_SOURCEMAC 0x08
+ #define EBT_DESTMAC 0x10
++#if 1//defined(TCSUPPORT_PON_MAC_FILTER)
++#define EBT_SOURCEMACSTART 0x100
++#define EBT_SOURCEMACEND 0x200
++#define EBT_DESTMACSTART 0x400
++#define EBT_DESTMACEND 0x800
++#endif
++
++#if 1//defined(TCSUPPORT_PON_MAC_FILTER)
++#define EBT_F_MASK (EBT_NOPROTO | EBT_802_3 | EBT_SOURCEMAC | EBT_DESTMAC \
++   | EBT_SOURCEMACSTART |EBT_SOURCEMACEND |EBT_DESTMACSTART |EBT_DESTMACEND \
++   | EBT_ENTRY_OR_ENTRIES)
++#else
+ #define EBT_F_MASK (EBT_NOPROTO | EBT_802_3 | EBT_SOURCEMAC | EBT_DESTMAC \
+    | EBT_ENTRY_OR_ENTRIES)
++#endif
+ 
+ #define EBT_IPROTO 0x01
+ #define EBT_IIN 0x02
+@@ -116,8 +129,21 @@ struct ebt_entries {
+ #define EBT_IDEST 0x10
+ #define EBT_ILOGICALIN 0x20
+ #define EBT_ILOGICALOUT 0x40
++#if 1//defined(TCSUPPORT_PON_MAC_FILTER)
++#define EBT_ISOURCESTART 0x100
++#define EBT_ISOURCEEND 0x200
++#define EBT_IDESTSTART 0x400
++#define EBT_IDESTEND 0x800
++#endif
++
++#if 1//defined(TCSUPPORT_PON_MAC_FILTER)
++#define EBT_INV_MASK (EBT_IPROTO | EBT_IIN | EBT_IOUT | EBT_ILOGICALIN \
++   | EBT_ISOURCESTART |EBT_ISOURCEEND |EBT_IDESTSTART |EBT_IDESTEND \
++   | EBT_ILOGICALOUT | EBT_ISOURCE | EBT_IDEST)
++#else
+ #define EBT_INV_MASK (EBT_IPROTO | EBT_IIN | EBT_IOUT | EBT_ILOGICALIN \
+    | EBT_ILOGICALOUT | EBT_ISOURCE | EBT_IDEST)
++#endif
+ 
+ struct ebt_entry_match {
+ 	union {
+@@ -182,6 +208,16 @@ struct ebt_entry {
+ 	unsigned char sourcemsk[ETH_ALEN];
+ 	unsigned char destmac[ETH_ALEN];
+ 	unsigned char destmsk[ETH_ALEN];
++#if 1//defined(TCSUPPORT_PON_MAC_FILTER)
++	unsigned char sourcemacstart[ETH_ALEN];
++	unsigned char sourcestartmsk[ETH_ALEN];
++	unsigned char sourcemacend[ETH_ALEN];
++	unsigned char sourceendmsk[ETH_ALEN];
++	unsigned char destmacstart[ETH_ALEN];
++	unsigned char deststartmsk[ETH_ALEN];
++	unsigned char destmacend[ETH_ALEN];
++	unsigned char destendmsk[ETH_ALEN];
++#endif
+ 	/* sizeof ebt_entry + matches */
+ 	unsigned int watchers_offset;
+ 	/* sizeof ebt_entry + matches + watchers */

@@ -1,0 +1,11 @@
+--- a/broadcom/src/bcm_qos_runner.c
++++ b/broadcom/src/bcm_qos_runner.c
+@@ -221,7 +221,7 @@ static int get_is_driver_stats_read_and_
+ 	syslog(LOG_INFO,"%s result_chip_id:%s\n",__FUNCTION__,result_chip_id);
+ 	/*BCM968 CHIP, stats read from driver is accumulated stats, while in other its read and reset */
+ 	if ((strncmp(result_chip_id, "68", 2) == 0) || (strncmp(result_chip_id, "675", 3) == 0) ||
+-			(strncmp(result_chip_id, "6315",4) == 0))
++			(strncmp(result_chip_id, "6315",4) == 0) || (strncmp(result_chip_id, "6314",4) == 0))
+ 		return 0;
+ 	else
+ 		return 1;

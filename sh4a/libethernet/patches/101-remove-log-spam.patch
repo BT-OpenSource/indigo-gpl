@@ -1,0 +1,25 @@
+diff --git a/linux/linux/linux_eth.c b/linux/linux/linux_eth.c
+index 5d27550180c9db387ceddfe2a4db533b9d4d8e07..5eb51bed60da2b183a47dd6099e4c06b8307db28 100644
+--- a/linux/linux/linux_eth.c
++++ b/linux/linux/linux_eth.c
+@@ -269,7 +269,6 @@ int linux_get_if_stats(const char *ifname)
+ {
+     memset(&g_linux_ifstats, 0, sizeof(struct eth_stats));
+ 
+-    syslog(LOG_INFO, "%s(%d): ifname is %s", __FUNCTION__, __LINE__, ifname);
+ 
+     if (linux_get_ifstats(ifname, &g_linux_ifstats) < 0)
+         return -1;
+diff --git a/linux/mtk/mtk_eth.c b/linux/mtk/mtk_eth.c
+index abed7ec8efc2d3ac47a3fe244477dbfa606d1af3..6a8c6edb16224ba2cb4be52e19d893d10cebacef 100644
+--- a/linux/mtk/mtk_eth.c
++++ b/linux/mtk/mtk_eth.c
+@@ -156,8 +156,6 @@ int mtk_get_if_stats(const char *ifname)
+     memset(&g_mtk_ifstats, 0, sizeof(struct eth_stats));
+     memset(&g_mtk_stat, 0, sizeof(struct mtk_ethnic_stats));
+ 
+-    syslog(LOG_INFO, "%s(%d): ifname is %s", __FUNCTION__, __LINE__, ifname);
+-
+     if (mtk_get_ifstats(ifname, &g_mtk_ifstats) < 0)
+         return -1;
+     if (mtk_get_ethtool_stats(ifname) < 0)

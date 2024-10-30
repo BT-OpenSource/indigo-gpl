@@ -1,0 +1,115 @@
+--- a/channels/chan_pjsip.c
++++ b/channels/chan_pjsip.c
+@@ -3327,15 +3327,10 @@
+ 	case 180: {
+ 		pjsip_rdata_sdp_info *sdp = pjsip_rdata_get_sdp_info(rdata);
+ 		if (sdp && sdp->body.ptr) {
+-			if(!strcmp(session->endpoint->earlymedia,"sendrecv") || !strcmp(session->endpoint->earlymedia,"sendonly"))
+-			{
+-				ast_trace(-1, "%s: Queueing PROGRESS\n", ast_sip_session_get_name(session));
+-				ast_queue_control(session->channel, AST_CONTROL_PROGRESS);
+-			}
+-			else{
+-				ast_trace(-1, "%s: Queueing RINGING\n", ast_sip_session_get_name(session));
+-				ast_queue_control(session->channel, AST_CONTROL_RINGING);
+-			}
++			/* Always play backward (from UAS to UAC) early media if any in an outgoing call regardless the configuration
++			 * of early media  */
++			ast_trace(-1, "%s: Queueing PROGRESS\n", ast_sip_session_get_name(session));
++			ast_queue_control(session->channel, AST_CONTROL_PROGRESS);
+ 		} else {
+ 			ast_trace(-1, "%s: Queueing RINGING\n", ast_sip_session_get_name(session));
+ 			ast_queue_control(session->channel, AST_CONTROL_RINGING);
+@@ -3361,16 +3356,10 @@
+ 			ast_trace(-1, "%s: Queueing PROGRESS\n", ast_sip_session_get_name(session));
+ 			ast_trace(1, "%s Method: %.*s Status: %d  Queueing PROGRESS without SDP\n", ast_sip_session_get_name(session),
+ 				(int)rdata->msg_info.cseq->method.name.slen, rdata->msg_info.cseq->method.name.ptr, status.code);
+-			if(!strcmp(session->endpoint->earlymedia,"sendrecv") || !strcmp(session->endpoint->earlymedia,"sendonly"))
+-			{
+-				ast_trace(-1, "%s: Queueing PROGRESS\n", ast_sip_session_get_name(session));
+-				ast_queue_control(session->channel, AST_CONTROL_PROGRESS);
+-			}
+-			else
+-			{
+-				ast_trace(-1, "%s: Queueing RINGING\n", ast_sip_session_get_name(session));
+-				ast_queue_control(session->channel, AST_CONTROL_RINGING);
+-			}
++			/* Always play backward (from UAS to UAC) early media if any in an outgoing call regardless the configuration
++			 * of early media  */
++			ast_trace(-1, "%s: Queueing PROGRESS\n", ast_sip_session_get_name(session));
++			ast_queue_control(session->channel, AST_CONTROL_PROGRESS);
+ 		}
+ 		break;
+ 	case 200:
+--- a/res/res_pjsip_session.c
++++ b/res/res_pjsip_session.c
+@@ -2973,12 +2973,12 @@
+ 			strcpy(session->endpoint->earlymedia ,"none");
+ 	}
+ 
+-	if(parse_earlymedia_direction(session->endpoint->earlymedia))
+-	{
+-		ast_debug(3, "INVITE: Adding P-Early-Media headers %s\n",session->endpoint->earlymedia);
+-		ast_sip_add_header(*tdata,"P-Early-Media","supported");
+-		session->early_media = 1;
+-	}
++	/* Always play backward (from UAS to UAC) early media if any in an outgoing call regardless the configuration
++	 * of early media  */
++	ast_debug(3, "INVITE: Adding P-Early-Media: supported\n");
++	ast_sip_add_header(*tdata,"P-Early-Media","supported");
++	session->early_media = 1;
++
+ 	/*Add emergency headers if it is an emergency call */
+ 	/*If dialing an emergency number, add `Priority: emergency` and `Resource-Priority: emrg.0` */
+ 	if(session->channel && ast_channel_emergency_ongoing_get(session->channel)){
+@@ -4418,16 +4418,16 @@
+ {
+ 	// add early media header
+ 	pjsip_dialog *dlg = pjsip_tdata_get_dlg(tdata);
+-	if(tdata->msg->line.status.code == 6) //Prack
++	if(tdata->msg->line.status.code == 6) // PRACK
+ 	{
+ 		if(dlg)
+ 		{
+ 			RAII_VAR(struct ast_sip_session *, session, ast_sip_dialog_get_session(dlg), ao2_cleanup);
+ 			if(session && session->early_media)
+ 			{
+-				if(parse_earlymedia_direction(session->endpoint->earlymedia))
+-					ast_sip_add_header(tdata,"P-Early-Media", session->endpoint->earlymedia);
+-
++				/* Always play backward (from UAS to UAC) early media if any in an outgoing call regardless the configuration
++				 * of early media  */
++				ast_sip_add_header(tdata,"P-Early-Media", "sendonly");
+ 			}
+ 		}
+ 	}
+@@ -4853,21 +4853,20 @@
+ 	//If earlymedia is enabled add header to 18X responses
+ 	if(status.code == 180 || status.code == 183)
+ 	{
+-		if(session->early_media)
+-		{
+-			if (parse_earlymedia_direction(session->endpoint->earlymedia))
+-				ast_sip_add_header(tdata, "P-Early-Media", session->endpoint->earlymedia);
+-		}
++		/* Only support backward (from UAS to UAC) early media in an outgoing call */
++		ast_log(LOG_DEBUG, "Don't add the P-Early-Media header in any responses to INVITE\n");
+ 	}
+ 
+ 	if (!cseq) {
+ 		SCOPE_EXIT_LOG_RTN(LOG_ERROR, "%s: Cannot send response due to missing sequence header",
+ 			ast_sip_session_get_name(session));
+ 	}
+-        if (session->ring_cw == PJ_TRUE ){
+-                ast_sip_add_header(tdata, "Alert-Info", "<urn:alert:service:call-waiting>");
+-		session->ring_cw = PJ_FALSE;  /*! Reset call wait status */
+-        }
++
++	if (session->ring_cw == PJ_TRUE) {
++		ast_sip_add_header(tdata, "Alert-Info", "<urn:alert:service:call-waiting>");
++		session->ring_cw = PJ_FALSE; /*! Reset call wait status */
++	}
++
+ 	ast_sip_message_apply_transport(session->endpoint->transport, tdata);
+ 
+ 	AST_LIST_TRAVERSE(&session->supplements, supplement, next) {

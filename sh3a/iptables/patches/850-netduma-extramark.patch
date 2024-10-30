@@ -1,9 +1,291 @@
-© Netduma Software Ltd 2021
-Added extra_mark to skb and ct.
-This patch is a combination of Netduma patches provided in NG-204909.
+Subject: [PATCH] Implement NetDuma extra-mark in iptables
 
---- a/extensions/libxt_connmark.c
-+++ b/extensions/libxt_connmark.c
+     * Add extra-mark support in userspace iptables (to enable communication
+       with the extra-mark -patched Linux kernel).
+
+       The patch primarily applies to the mark and connmark, respectively,
+       match and target in iptables. A new option, --markidx, is added to
+       the their cli to make it possible to instruct them to operate on the
+       extra-mark instead of the normal mark. DEFAULT BEHAVIOR IS UNCHANGED:
+       not specifying the aforementined option will have iptables operating
+       on the normal mark, as usual. Note that there's an intentional small
+       inconsistency in the option where only the connmark target (CONNMARK)
+       expects --mark-idx rather than --markidx.
+
+       To direct iptables to use the extra-mark instead of the normal mark,
+       an index of 1 can be specified to the option the patch introduces.
+       For example: --markidx 0x1.
+
+       The commandline option introduced can be used to qualify other
+       options that are used with the aforementioned matches and targets.
+       Specifically: --set-mark, --save-mark, --restore-mark.
+
+       At a high level, the patch enables userspace iptables (as described
+       above) to include extra-mark in the data sent to the kernel
+       after command line parsing and the data retrieved from the kernel
+       for display in the console.
+
+       In light of the description above, the patch doesn't introduce any
+       significant alterations and consists of just glue code emulating
+       what's already there for the normal Linux kernel mark so as to tie
+       in support for an additional such mark (an extra mark, if you will).
+
+       Glue code is also written to add the command line option(s): see for
+       example the changes to connmark_mt_opts.
+---
+ extensions/libxt_CONNMARK.c       | 27 +++++++++++----
+ extensions/libxt_MARK.c           | 14 ++++++--
+ extensions/libxt_connmark.c       | 23 ++++++++++---
+ extensions/libxt_mark.c           | 24 ++++++++++---
+ include/linux/netfilter/xt_mark.h |  2 ++
+ include/xt_connmark_idx.h         | 57 +++++++++++++++++++++++++++++++
+ include/xt_mark_idx.h             | 24 +++++++++++++
+ 7 files changed, 153 insertions(+), 18 deletions(-)
+ create mode 100644 include/xt_connmark_idx.h
+ create mode 100644 include/xt_mark_idx.h
+
+Index: iptables-1.8.8/extensions/libxt_CONNMARK.c
+===================================================================
+--- iptables-1.8.8.orig/extensions/libxt_CONNMARK.c
++++ iptables-1.8.8/extensions/libxt_CONNMARK.c
+@@ -24,7 +24,7 @@
+ #include <stdio.h>
+ #include <strings.h>
+ #include <xtables.h>
+-#include <linux/netfilter/xt_CONNMARK.h>
++#include <xt_connmark_idx.h>
+ 
+ struct xt_connmark_target_info {
+ 	unsigned long mark;
+@@ -50,6 +50,7 @@ enum {
+ 	O_CTMASK,
+ 	O_NFMASK,
+ 	O_MASK,
++	O_SET_MARKIDX,
+ 	O_DSCP_MARK,
+ 	F_SET_MARK         = 1 << O_SET_MARK,
+ 	F_SAVE_MARK        = 1 << O_SAVE_MARK,
+@@ -92,6 +93,7 @@ static const struct xt_option_entry CONN
+ 	{.name = "restore-mark", .id = O_RESTORE_MARK, .type = XTTYPE_NONE,
+ 	 .excl = F_OP_ANY},
+ 	{.name = "mask", .id = O_MASK, .type = XTTYPE_UINT32},
++	{.name = "markidx", .id = O_SET_MARKIDX, .type = XTTYPE_UINT32 },
+ 	XTOPT_TABLEEND,
+ };
+ #undef s
+@@ -148,6 +150,7 @@ static const struct xt_option_entry conn
+ 	 .excl = F_MASK, .flags = XTOPT_PUT, XTOPT_POINTER(s, ctmask)},
+ 	{.name = "nfmask", .id = O_NFMASK, .type = XTTYPE_UINT32,
+ 	 .excl = F_MASK, .flags = XTOPT_PUT, XTOPT_POINTER(s, nfmask)},
++	{.name = "markidx", .id = O_SET_MARKIDX, .type = XTTYPE_UINT32 },
+ 	{.name = "mask", .id = O_MASK, .type = XTTYPE_UINT32,
+ 	 .excl = F_CTMASK | F_NFMASK},
+ 	XTOPT_TABLEEND,
+@@ -180,6 +183,7 @@ static const struct xt_option_entry conn
+ 	 .excl = F_MASK, .flags = XTOPT_PUT, XTOPT_POINTER(s, nfmask)},
+ 	{.name = "mask", .id = O_MASK, .type = XTTYPE_UINT32,
+ 	 .excl = F_CTMASK | F_NFMASK},
++	{.name = "markidx", .id = O_SET_MARKIDX, .type = XTTYPE_UINT32 },
+ 	{.name = "set-dscpmark", .id = O_DSCP_MARK, .type = XTTYPE_MARKMASK32,
+ 	 .excl = F_OP_ANY},
+ 	XTOPT_TABLEEND,
+@@ -336,6 +340,9 @@ static void connmark_tg_parse(struct xt_
+ 	case O_MASK:
+ 		info->nfmask = info->ctmask = cb->val.u32;
+ 		break;
++	case O_SET_MARKIDX:
++		info->idx = cb->val.u32;
++		break;
+ 	default:
+ 		break;
+ 	}
+@@ -389,6 +396,9 @@ static void connmark_tg_parse_v2(struct
+ 		info->shift_dir = D_SHIFT_RIGHT;
+ 		info->shift_bits = cb->val.u8;
+ 		break;
++	case O_SET_MARKIDX:
++		info->idx = cb->val.u32;
++		break;
+ 	default:
+ 		break;
+ 	}
+@@ -461,6 +471,9 @@ static void connmark_tg_parse_v3(struct
+ 		info->shift_dir = D_SHIFT_RIGHT;
+ 		info->shift_bits = cb->val.u8;
+ 		break;
++	case O_SET_MARKIDX:
++		info->idx = cb->val.u32;
++		break;
+ 	default:
+ 		break;
+ 	}
+@@ -553,8 +566,9 @@ connmark_tg_print(const void *ip, const
+ 
+ 	default:
+ 		printf(" ERROR: UNKNOWN CONNMARK MODE");
+-		break;
++		return;
+ 	}
++	printf(" markidx %d", info->idx);
+ }
+ 
+ static void
+@@ -600,13 +614,14 @@ connmark_tg_print_v2(const void *ip, con
+ 
+ 	default:
+ 		printf(" ERROR: UNKNOWN CONNMARK MODE");
+-		break;
++		return;
+ 	}
+ 
+ 	if (info->mode <= XT_CONNMARK_RESTORE &&
+ 	    info->shift_bits != 0) {
+ 		printf(" %s %u", shift_op, info->shift_bits);
+ 	}
++	printf(" markidx %d", info->idx);
+ }
+ 
+ static void
+@@ -658,7 +673,7 @@ connmark_tg_print_v3(const void *ip, con
+ 
+ 	default:
+ 		printf(" ERROR: UNKNOWN CONNMARK MODE");
+-		break;
++		return;
+ 	}
+ 
+ 	if (info->mode <= XT_CONNMARK_RESTORE &&
+@@ -666,6 +681,7 @@ connmark_tg_print_v3(const void *ip, con
+ 	    info->shift_bits != 0) {
+ 		printf(" %s %u", shift_op, info->shift_bits);
+ 	}
++	printf(" markidx %d", info->idx);
+ }
+ 
+ static void CONNMARK_save(const void *ip, const struct xt_entry_target *target)
+@@ -689,7 +705,7 @@ static void CONNMARK_save(const void *ip
+ 	    break;
+ 	default:
+ 	    printf(" ERROR: UNKNOWN CONNMARK MODE");
+-	    break;
++	    return;
+ 	}
+ }
+ 
+@@ -720,8 +736,9 @@ connmark_tg_save(const void *ip, const s
+ 		break;
+ 	default:
+ 		printf(" ERROR: UNKNOWN CONNMARK MODE");
+-		break;
++		return;
+ 	}
++	printf(" --markidx %d", info->idx);
+ }
+ 
+ static void
+@@ -744,13 +761,15 @@ connmark_tg_save_v2(const void *ip, cons
+ 		break;
+ 	default:
+ 		printf(" ERROR: UNKNOWN CONNMARK MODE");
+-		break;
++		return;
+ 	}
+ 
+ 	if (info->mode <= XT_CONNMARK_RESTORE &&
+ 	    info->shift_bits != 0) {
+ 		printf(" --%s %u", shift_op, info->shift_bits);
+ 	}
++
++	printf(" --markidx %d", info->idx);
+ }
+ 
+ static void
+@@ -776,13 +795,15 @@ connmark_tg_save_v3(const void *ip, cons
+ 		break;
+ 	default:
+ 		printf(" ERROR: UNKNOWN CONNMARK MODE");
+-		break;
++		return;
+ 	}
+ 	if (info->mode <= XT_CONNMARK_RESTORE &&
+ 	    !(info->mode == XT_CONNMARK_SET && info->func == XT_CONNMARK_DSCP) &&
+ 	    info->shift_bits != 0) {
+ 		printf(" --%s %u", shift_op, info->shift_bits);
+ 	}
++
++	printf(" --markidx %d", info->idx);
+ }
+ 
+ static int connmark_tg_xlate(struct xt_xlate *xl,
+Index: iptables-1.8.8/extensions/libxt_MARK.c
+===================================================================
+--- iptables-1.8.8.orig/extensions/libxt_MARK.c
++++ iptables-1.8.8/extensions/libxt_MARK.c
+@@ -2,7 +2,7 @@
+ #include <stdbool.h>
+ #include <stdio.h>
+ #include <xtables.h>
+-#include <linux/netfilter/xt_MARK.h>
++#include <xt_mark_idx.h>
+ 
+ /* Version 0 */
+ struct xt_mark_target_info {
+@@ -27,11 +27,13 @@ enum {
+ 	O_OR_MARK,
+ 	O_XOR_MARK,
+ 	O_SET_XMARK,
++	O_SET_MARKIDX,
+ 	F_SET_MARK  = 1 << O_SET_MARK,
+ 	F_AND_MARK  = 1 << O_AND_MARK,
+ 	F_OR_MARK   = 1 << O_OR_MARK,
+ 	F_XOR_MARK  = 1 << O_XOR_MARK,
+ 	F_SET_XMARK = 1 << O_SET_XMARK,
++	F_SET_MARKIDX = 1 << O_SET_MARKIDX,
+ 	F_ANY       = F_SET_MARK | F_AND_MARK | F_OR_MARK |
+ 	              F_XOR_MARK | F_SET_XMARK,
+ };
+@@ -66,6 +68,8 @@ static const struct xt_option_entry mark
+ 	 .excl = F_ANY},
+ 	{.name = "xor-mark", .id = O_XOR_MARK, .type = XTTYPE_UINT32,
+ 	 .excl = F_ANY},
++	{.name = "mark-idx", .id = O_SET_MARKIDX, .type = XTTYPE_UINT32,
++	 .excl = F_SET_MARKIDX},
+ 	XTOPT_TABLEEND,
+ };
+ 
+@@ -148,6 +152,9 @@ static void mark_tg_parse(struct xt_opti
+ 		info->mark = cb->val.u32;
+ 		info->mask = 0;
+ 		break;
++	case O_SET_MARKIDX:
++		info->idx = cb->val.u32;
++		break;
+ 	}
+ }
+ 
+@@ -217,6 +224,9 @@ static void mark_tg_print(const void *ip
+ 		printf(" MARK set 0x%x", info->mark);
+ 	else
+ 		printf(" MARK xset 0x%x/0x%x", info->mark, info->mask);
++
++	if (info->idx)
++		printf(" mark-idx %d", info->idx);
+ }
+ 
+ static void MARK_save_v1(const void *ip, const struct xt_entry_target *target)
+@@ -242,7 +252,7 @@ static void mark_tg_save(const void *ip,
+ {
+ 	const struct xt_mark_tginfo2 *info = (const void *)target->data;
+ 
+-	printf(" --set-xmark 0x%x/0x%x", info->mark, info->mask);
++	printf(" --set-xmark 0x%x/0x%x --mark-idx %d", info->mark, info->mask, info->idx);
+ }
+ 
+ static void mark_tg_arp_save(const void *ip, const struct xt_entry_target *target)
+Index: iptables-1.8.8/extensions/libxt_connmark.c
+===================================================================
+--- iptables-1.8.8.orig/extensions/libxt_connmark.c
++++ iptables-1.8.8/extensions/libxt_connmark.c
 @@ -23,15 +23,17 @@
  #include <stdint.h>
  #include <stdio.h>
@@ -70,191 +352,10 @@ This patch is a combination of Netduma patches provided in NG-204909.
  }
  
  static void print_mark_xlate(unsigned int mark, unsigned int mask,
---- a/extensions/libxt_CONNMARK.c
-+++ b/extensions/libxt_CONNMARK.c
-@@ -24,7 +24,7 @@
- #include <stdio.h>
- #include <strings.h>
- #include <xtables.h>
--#include <linux/netfilter/xt_CONNMARK.h>
-+#include <xt_connmark_idx.h>
- 
- struct xt_connmark_target_info {
- 	unsigned long mark;
-@@ -50,6 +50,7 @@ enum {
- 	O_CTMASK,
- 	O_NFMASK,
- 	O_MASK,
-+	O_SET_MARKIDX,
- 	O_DSCP_MARK,
- 	F_SET_MARK         = 1 << O_SET_MARK,
- 	F_SAVE_MARK        = 1 << O_SAVE_MARK,
-@@ -92,6 +93,7 @@ static const struct xt_option_entry CONN
- 	{.name = "restore-mark", .id = O_RESTORE_MARK, .type = XTTYPE_NONE,
- 	 .excl = F_OP_ANY},
- 	{.name = "mask", .id = O_MASK, .type = XTTYPE_UINT32},
-+	{.name = "markidx", .id = O_SET_MARKIDX, .type = XTTYPE_UINT32 },
- 	XTOPT_TABLEEND,
- };
- #undef s
-@@ -118,6 +120,7 @@ static const struct xt_option_entry conn
- 	 .excl = F_MASK, .flags = XTOPT_PUT, XTOPT_POINTER(s, nfmask)},
- 	{.name = "mask", .id = O_MASK, .type = XTTYPE_UINT32,
- 	 .excl = F_CTMASK | F_NFMASK},
-+	{.name = "markidx", .id = O_SET_MARKIDX, .type = XTTYPE_UINT32 },
- 	{.name = "set-dscpmark", .id = O_DSCP_MARK, .type = XTTYPE_MARKMASK32,
- 	 .excl = F_OP_ANY},
- 	XTOPT_TABLEEND,
-@@ -150,6 +153,7 @@ static const struct xt_option_entry conn
- 	 .excl = F_MASK, .flags = XTOPT_PUT, XTOPT_POINTER(s, nfmask)},
- 	{.name = "mask", .id = O_MASK, .type = XTTYPE_UINT32,
- 	 .excl = F_CTMASK | F_NFMASK},
-+	{.name = "markidx", .id = O_SET_MARKIDX, .type = XTTYPE_UINT32 },
- 	XTOPT_TABLEEND,
- };
- #undef s
-@@ -180,6 +184,7 @@ static const struct xt_option_entry conn
- 	 .excl = F_MASK, .flags = XTOPT_PUT, XTOPT_POINTER(s, nfmask)},
- 	{.name = "mask", .id = O_MASK, .type = XTTYPE_UINT32,
- 	 .excl = F_CTMASK | F_NFMASK},
-+	{.name = "markidx", .id = O_SET_MARKIDX, .type = XTTYPE_UINT32 },
- 	{.name = "set-dscpmark", .id = O_DSCP_MARK, .type = XTTYPE_MARKMASK32,
- 	 .excl = F_OP_ANY},
- 	XTOPT_TABLEEND,
-@@ -336,6 +341,9 @@ static void connmark_tg_parse(struct xt_
- 	case O_MASK:
- 		info->nfmask = info->ctmask = cb->val.u32;
- 		break;
-+	case O_SET_MARKIDX:
-+		info->idx = cb->val.u32;
-+		break;
- 	default:
- 		break;
- 	}
-@@ -389,6 +397,9 @@ static void connmark_tg_parse_v2(struct
- 		info->shift_dir = D_SHIFT_RIGHT;
- 		info->shift_bits = cb->val.u8;
- 		break;
-+	case O_SET_MARKIDX:
-+		info->idx = cb->val.u32;
-+		break;
- 	default:
- 		break;
- 	}
-@@ -461,6 +472,9 @@ static void connmark_tg_parse_v3(struct
- 		info->shift_dir = D_SHIFT_RIGHT;
- 		info->shift_bits = cb->val.u8;
- 		break;
-+	case O_SET_MARKIDX:
-+		info->idx = cb->val.u32;
-+		break;
- 	default:
- 		break;
- 	}
-@@ -553,8 +567,10 @@ connmark_tg_print(const void *ip, const
- 
- 	default:
- 		printf(" ERROR: UNKNOWN CONNMARK MODE");
--		break;
-+		return;
- 	}
-+
-+	printf(" markidx %d", info->idx);
- }
- 
- static void
-@@ -600,13 +616,15 @@ connmark_tg_print_v2(const void *ip, con
- 
- 	default:
- 		printf(" ERROR: UNKNOWN CONNMARK MODE");
--		break;
-+		return;
- 	}
- 
- 	if (info->mode <= XT_CONNMARK_RESTORE &&
- 	    info->shift_bits != 0) {
- 		printf(" %s %u", shift_op, info->shift_bits);
- 	}
-+
-+	printf(" markidx %d", info->idx);
- }
- 
- static void
-@@ -658,7 +676,7 @@ connmark_tg_print_v3(const void *ip, con
- 
- 	default:
- 		printf(" ERROR: UNKNOWN CONNMARK MODE");
--		break;
-+		return;
- 	}
- 
- 	if (info->mode <= XT_CONNMARK_RESTORE &&
-@@ -666,6 +684,8 @@ connmark_tg_print_v3(const void *ip, con
- 	    info->shift_bits != 0) {
- 		printf(" %s %u", shift_op, info->shift_bits);
- 	}
-+
-+	printf(" markidx %d", info->idx);
- }
- 
- static void CONNMARK_save(const void *ip, const struct xt_entry_target *target)
-@@ -689,7 +709,7 @@ static void CONNMARK_save(const void *ip
- 	    break;
- 	default:
- 	    printf(" ERROR: UNKNOWN CONNMARK MODE");
--	    break;
-+	    return;
- 	}
- }
- 
-@@ -720,8 +740,10 @@ connmark_tg_save(const void *ip, const s
- 		break;
- 	default:
- 		printf(" ERROR: UNKNOWN CONNMARK MODE");
--		break;
-+		return;
- 	}
-+
-+	printf(" --markidx %d", info->idx);
- }
- 
- static void
-@@ -744,13 +766,15 @@ connmark_tg_save_v2(const void *ip, cons
- 		break;
- 	default:
- 		printf(" ERROR: UNKNOWN CONNMARK MODE");
--		break;
-+		return;
- 	}
- 
- 	if (info->mode <= XT_CONNMARK_RESTORE &&
- 	    info->shift_bits != 0) {
- 		printf(" --%s %u", shift_op, info->shift_bits);
- 	}
-+
-+	printf(" --markidx %d", info->idx);
- }
- 
- static void
-@@ -776,13 +800,15 @@ connmark_tg_save_v3(const void *ip, cons
- 		break;
- 	default:
- 		printf(" ERROR: UNKNOWN CONNMARK MODE");
--		break;
-+		return;
- 	}
- 	if (info->mode <= XT_CONNMARK_RESTORE &&
- 	    !(info->mode == XT_CONNMARK_SET && info->func == XT_CONNMARK_DSCP) &&
- 	    info->shift_bits != 0) {
- 		printf(" --%s %u", shift_op, info->shift_bits);
- 	}
-+
-+	printf(" --markidx %d", info->idx);
- }
- 
- static int connmark_tg_xlate(struct xt_xlate *xl,
---- a/extensions/libxt_mark.c
-+++ b/extensions/libxt_mark.c
+Index: iptables-1.8.8/extensions/libxt_mark.c
+===================================================================
+--- iptables-1.8.8.orig/extensions/libxt_mark.c
++++ iptables-1.8.8/extensions/libxt_mark.c
 @@ -1,15 +1,17 @@
  #include <stdbool.h>
  #include <stdio.h>
@@ -325,71 +426,10 @@ This patch is a combination of Netduma patches provided in NG-204909.
  }
  
  static void
---- a/extensions/libxt_MARK.c
-+++ b/extensions/libxt_MARK.c
-@@ -2,7 +2,7 @@
- #include <stdbool.h>
- #include <stdio.h>
- #include <xtables.h>
--#include <linux/netfilter/xt_MARK.h>
-+#include <xt_mark_idx.h>
- 
- /* Version 0 */
- struct xt_mark_target_info {
-@@ -27,11 +27,13 @@ enum {
- 	O_OR_MARK,
- 	O_XOR_MARK,
- 	O_SET_XMARK,
-+	O_SET_MARKIDX,
- 	F_SET_MARK  = 1 << O_SET_MARK,
- 	F_AND_MARK  = 1 << O_AND_MARK,
- 	F_OR_MARK   = 1 << O_OR_MARK,
- 	F_XOR_MARK  = 1 << O_XOR_MARK,
- 	F_SET_XMARK = 1 << O_SET_XMARK,
-+	F_SET_MARKIDX = 1 << O_SET_MARKIDX,
- 	F_ANY       = F_SET_MARK | F_AND_MARK | F_OR_MARK |
- 	              F_XOR_MARK | F_SET_XMARK,
- };
-@@ -66,6 +68,8 @@ static const struct xt_option_entry mark
- 	 .excl = F_ANY},
- 	{.name = "xor-mark", .id = O_XOR_MARK, .type = XTTYPE_UINT32,
- 	 .excl = F_ANY},
-+	{.name = "mark-idx", .id = O_SET_MARKIDX, .type = XTTYPE_UINT32,
-+	 .excl = F_SET_MARKIDX},
- 	XTOPT_TABLEEND,
- };
- 
-@@ -149,6 +153,9 @@ static void mark_tg_parse(struct xt_opti
- 		info->mark = cb->val.u32;
- 		info->mask = 0;
- 		break;
-+	case O_SET_MARKIDX:
-+		info->idx = cb->val.u32;
-+		break;
- 	}
- }
- 
-@@ -218,6 +225,9 @@ static void mark_tg_print(const void *ip
- 		printf(" MARK set 0x%x", info->mark);
- 	else
- 		printf(" MARK xset 0x%x/0x%x", info->mark, info->mask);
-+
-+	if (info->idx)
-+		printf(" mark-idx %d", info->idx);
- }
- 
- static void MARK_save_v1(const void *ip, const struct xt_entry_target *target)
-@@ -243,7 +253,7 @@ static void mark_tg_save(const void *ip,
- {
- 	const struct xt_mark_tginfo2 *info = (const void *)target->data;
- 
--	printf(" --set-xmark 0x%x/0x%x", info->mark, info->mask);
-+	printf(" --set-xmark 0x%x/0x%x --mark-idx %d", info->mark, info->mask, info->idx);
- }
- 
- static void mark_tg_arp_save(const void *ip, const struct xt_entry_target *target)
---- a/include/linux/netfilter/xt_mark.h
-+++ b/include/linux/netfilter/xt_mark.h
+Index: iptables-1.8.8/include/linux/netfilter/xt_mark.h
+===================================================================
+--- iptables-1.8.8.orig/include/linux/netfilter/xt_mark.h
++++ iptables-1.8.8/include/linux/netfilter/xt_mark.h
 @@ -5,11 +5,13 @@
  
  struct xt_mark_tginfo2 {
@@ -404,8 +444,10 @@ This patch is a combination of Netduma patches provided in NG-204909.
  };
  
  #endif /*_XT_MARK_H*/
+Index: iptables-1.8.8/include/xt_connmark_idx.h
+===================================================================
 --- /dev/null
-+++ b/include/xt_connmark_idx.h
++++ iptables-1.8.8/include/xt_connmark_idx.h
 @@ -0,0 +1,57 @@
 +#ifndef _XT_CONNMARK_H
 +#define _XT_CONNMARK_H
@@ -464,8 +506,10 @@ This patch is a combination of Netduma patches provided in NG-204909.
 +};
 +
 +#endif /*_XT_CONNMARK_H*/
+Index: iptables-1.8.8/include/xt_mark_idx.h
+===================================================================
 --- /dev/null
-+++ b/include/xt_mark_idx.h
++++ iptables-1.8.8/include/xt_mark_idx.h
 @@ -0,0 +1,24 @@
 +#ifndef _XT_MARK_H
 +#define _XT_MARK_H

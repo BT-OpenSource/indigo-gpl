@@ -1,0 +1,109 @@
+--- a/include/libnetlink.h
++++ b/include/libnetlink.h
+@@ -171,9 +171,6 @@ int rtnl_dump_filter_errhndlr_nc(struct rtnl_handle *rth,
+ #define rtnl_dump_filter_errhndlr(rth, filter, farg, errhndlr, earg) \
+ 	rtnl_dump_filter_errhndlr_nc(rth, filter, farg, errhndlr, earg, 0)
+ 
+-int rtnl_echo_talk(struct rtnl_handle *rtnl, struct nlmsghdr *n, int json,
+-		   int (*print_info)(struct nlmsghdr *n, void *arg))
+-	__attribute__((warn_unused_result));
+ int rtnl_talk(struct rtnl_handle *rtnl, struct nlmsghdr *n,
+ 	      struct nlmsghdr **answer)
+ 	__attribute__((warn_unused_result));
+diff --git a/include/utils.h b/include/utils.h
+index 0b5d86a2..841c2547 100644
+--- a/include/utils.h
++++ b/include/utils.h
+@@ -385,4 +385,7 @@ int proto_a2n(unsigned short *id, const char *buf,
+ const char *proto_n2a(unsigned short id, char *buf, int len,
+ 		      const struct proto *proto_tb, size_t tb_len);
+ 
++int rtnl_echo_talk(struct rtnl_handle *rtnl, struct nlmsghdr *n, int json,
++		   int (*print_info)(struct nlmsghdr *n, void *arg))
++	__attribute__((warn_unused_result));
+ #endif /* __UTILS_H__ */
+diff --git a/lib/libnetlink.c b/lib/libnetlink.c
+index 7edcd285..55a8e135 100644
+--- a/lib/libnetlink.c
++++ b/lib/libnetlink.c
+@@ -1140,28 +1140,6 @@ static int __rtnl_talk(struct rtnl_handle *rtnl, struct nlmsghdr *n,
+ 	return __rtnl_talk_iov(rtnl, &iov, 1, answer, show_rtnl_err, errfn);
+ }
+ 
+-int rtnl_echo_talk(struct rtnl_handle *rtnl, struct nlmsghdr *n, int json,
+-		   int (*print_info)(struct nlmsghdr *n, void *arg))
+-{
+-	struct nlmsghdr *answer;
+-	int ret;
+-
+-	n->nlmsg_flags |= NLM_F_ECHO | NLM_F_ACK;
+-
+-	ret = rtnl_talk(rtnl, n, &answer);
+-	if (ret)
+-		return ret;
+-
+-	new_json_obj(json);
+-	open_json_object(NULL);
+-	print_info(answer, stdout);
+-	close_json_object();
+-	delete_json_obj();
+-	free(answer);
+-
+-	return 0;
+-}
+-
+ int rtnl_talk(struct rtnl_handle *rtnl, struct nlmsghdr *n,
+ 	      struct nlmsghdr **answer)
+ {
+diff --git a/lib/utils.c b/lib/utils.c
+index b1f27305..8b89052c 100644
+--- a/lib/utils.c
++++ b/lib/utils.c
+@@ -1952,3 +1952,25 @@ int proto_a2n(unsigned short *id, const char *buf,
+ 
+ 	return 0;
+ }
++
++int rtnl_echo_talk(struct rtnl_handle *rtnl, struct nlmsghdr *n, int json,
++		   int (*print_info)(struct nlmsghdr *n, void *arg))
++{
++	struct nlmsghdr *answer;
++	int ret;
++
++	n->nlmsg_flags |= NLM_F_ECHO | NLM_F_ACK;
++
++	ret = rtnl_talk(rtnl, n, &answer);
++	if (ret)
++		return ret;
++
++	new_json_obj(json);
++	open_json_object(NULL);
++	print_info(answer, stdout);
++	close_json_object();
++	delete_json_obj();
++	free(answer);
++
++	return 0;
++}
+diff --git a/testsuite/tools/Makefile b/testsuite/tools/Makefile
+index 0356ddae..56d7a71c 100644
+--- a/testsuite/tools/Makefile
++++ b/testsuite/tools/Makefile
+@@ -1,13 +1,9 @@
+ # SPDX-License-Identifier: GPL-2.0
+ CFLAGS=
+-LDLIBS=
+ include ../../config.mk
+-ifeq ($(HAVE_CAP),y)
+-LDLIBS+= -lcap
+-endif
+ 
+-generate_nlmsg: generate_nlmsg.c ../../lib/libnetlink.a ../../lib/libutil.a
+-	$(QUIET_CC)$(CC) $(CPPFLAGS) $(CFLAGS) $(EXTRA_CFLAGS) -I../../include -I../../include/uapi -include../../include/uapi/linux/netlink.h -o $@ $^ -lmnl $(LDLIBS)
++generate_nlmsg: generate_nlmsg.c ../../lib/libnetlink.a
++	$(QUIET_CC)$(CC) $(CPPFLAGS) $(CFLAGS) $(EXTRA_CFLAGS) -I../../include -I../../include/uapi -include../../include/uapi/linux/netlink.h -o $@ $^ -lmnl
+ 
+ clean:
+ 	rm -f generate_nlmsg
+-- 
+2.38.1

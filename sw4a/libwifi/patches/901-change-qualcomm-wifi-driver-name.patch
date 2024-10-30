@@ -1,0 +1,11 @@
+--- a/modules/qualcomm/qca.c
++++ b/modules/qualcomm/qca.c
+@@ -90,7 +90,7 @@
+ }
+ 
+ const struct wifi_driver qca_driver = {
+-	.name = "wlan,phy",
++	.name = "wl,phy",
+ 
+ 	/* Radio/phy callbacks */
+ 	.radio.is_multiband = radio_is_multiband,

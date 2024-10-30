@@ -1,9 +1,42 @@
-© Netduma Software Ltd 2021
-Added extra_mark to skb and ct.
-This patch is a combination of Netduma patches provided in NG-204909.
+From d4a86a80621283c5356d2bae63ebf7d9d9457598 Mon Sep 17 00:00:00 2001
+From: Anas <anas.sayed@netduma.com>
+Date: Wed, 12 Jul 2023 14:49:55 +0000
+Subject: [PATCH] Implement NetDuma extramark in lib nfconntrack
 
---- a/include/internal/object.h
-+++ b/include/internal/object.h
+     * Emulate already existing entries dealing with the kernel mark to add
+       extramark support. The extramark is simply an additional -extra-
+       skb->mark -like field in the Linux kernel that can be used in the
+       same way.
+
+       Specifically, to accomplish this:
+
+     * Add new new relevant extramark attributes to the enumerations used
+       by the conntrack library for communication with the kernel (which
+       must also be patched) - ctattr_type - and communication with
+       userspace applications - nf_conntrack_attr- respectively.
+
+     * Add required boilerplate needed for conntrack communication. For
+       this, emulate existing functions operating on the kernel mark.
+       For example, given nfct_build_mark, add nfct_build_extra_mark,
+       which will operate on extramark instead of the kernel mark.
+---
+ include/internal/object.h                           |  1 +
+ .../libnetfilter_conntrack/libnetfilter_conntrack.h |  3 +++
+ .../linux_nfnetlink_conntrack.h                     |  3 +++
+ src/conntrack/build_mnl.c                           | 10 ++++++++++
+ src/conntrack/compare.c                             | 13 ++++++++++++-
+ src/conntrack/copy.c                                |  7 +++++++
+ src/conntrack/filter_dump.c                         |  6 ++++++
+ src/conntrack/getter.c                              |  6 ++++++
+ src/conntrack/parse_mnl.c                           |  6 ++++++
+ src/conntrack/setter.c                              |  7 +++++++
+ src/conntrack/snprintf_default.c                    | 11 +++++++++++
+ 11 files changed, 72 insertions(+), 1 deletion(-)
+
+Index: libnetfilter_conntrack-1.0.9/include/internal/object.h
+===================================================================
+--- libnetfilter_conntrack-1.0.9.orig/include/internal/object.h
++++ libnetfilter_conntrack-1.0.9/include/internal/object.h
 @@ -162,6 +162,7 @@ struct nf_conntrack {
  
  	uint32_t 	timeout;
@@ -12,9 +45,45 @@ This patch is a combination of Netduma patches provided in NG-204909.
  	uint32_t	secmark;
  	uint32_t 	status;
  	uint32_t	use;
---- a/src/conntrack/build_mnl.c
-+++ b/src/conntrack/build_mnl.c
-@@ -395,6 +395,13 @@ nfct_build_mark(struct nlmsghdr *nlh, co
+Index: libnetfilter_conntrack-1.0.9/include/libnetfilter_conntrack/libnetfilter_conntrack.h
+===================================================================
+--- libnetfilter_conntrack-1.0.9.orig/include/libnetfilter_conntrack/libnetfilter_conntrack.h
++++ libnetfilter_conntrack-1.0.9/include/libnetfilter_conntrack/libnetfilter_conntrack.h
+@@ -144,6 +144,7 @@ enum nf_conntrack_attr {
+ 	ATTR_SYNPROXY_ISN = 72,			/* u32 bits */
+ 	ATTR_SYNPROXY_ITS,			/* u32 bits */
+ 	ATTR_SYNPROXY_TSOFF,			/* u32 bits */
++	ATTR_EXTRA_MARK,
+ 	ATTR_MAX
+ };
+ 
+@@ -541,6 +542,8 @@ struct nfct_filter_dump;
+ struct nfct_filter_dump_mark {
+ 	uint32_t val;
+ 	uint32_t mask;
++	uint32_t extra_val;
++	uint32_t extra_mask;
+ };
+ 
+ enum nfct_filter_dump_attr {
+Index: libnetfilter_conntrack-1.0.9/include/libnetfilter_conntrack/linux_nfnetlink_conntrack.h
+===================================================================
+--- libnetfilter_conntrack-1.0.9.orig/include/libnetfilter_conntrack/linux_nfnetlink_conntrack.h
++++ libnetfilter_conntrack-1.0.9/include/libnetfilter_conntrack/linux_nfnetlink_conntrack.h
+@@ -60,6 +60,8 @@ enum ctattr_type {
+ 	CTA_SYNPROXY,
++	CTA_EXTRA_MARK, /* HACK: ctattr_type inconsistent with kernel. CTA_FILTER,CTA_STATUS_MASK are missing. */
++	CTA_EXTRA_MARK_MASK,
+ 	CTA_FILTER,
+ 	CTA_STATUS_MASK,
+ 	__CTA_MAX
+ };
+ #define CTA_MAX (__CTA_MAX - 1)
+Index: libnetfilter_conntrack-1.0.9/src/conntrack/build_mnl.c
+===================================================================
+--- libnetfilter_conntrack-1.0.9.orig/src/conntrack/build_mnl.c
++++ libnetfilter_conntrack-1.0.9/src/conntrack/build_mnl.c
+@@ -394,6 +394,13 @@ nfct_build_mark(struct nlmsghdr *nlh, co
  }
  
  static int
@@ -28,7 +97,7 @@ This patch is a combination of Netduma patches provided in NG-204909.
  nfct_build_secmark(struct nlmsghdr *nlh, const struct nf_conntrack *ct)
  {
  	mnl_attr_put_u32(nlh, CTA_SECMARK, htonl(ct->secmark));
-@@ -538,6 +545,9 @@ nfct_nlmsg_build(struct nlmsghdr *nlh, c
+@@ -534,6 +541,9 @@ nfct_nlmsg_build(struct nlmsghdr *nlh, c
  	if (test_bit(ATTR_MARK, ct->head.set))
  		nfct_build_mark(nlh, ct);
  
@@ -38,8 +107,19 @@ This patch is a combination of Netduma patches provided in NG-204909.
  	if (test_bit(ATTR_SECMARK, ct->head.set))
  		nfct_build_secmark(nlh, ct);
  
---- a/src/conntrack/compare.c
-+++ b/src/conntrack/compare.c
+@@ -603,6 +613,8 @@ int nfct_nlmsg_build_filter(struct nlmsg
+ 	if (filter_dump->set & (1 << NFCT_FILTER_DUMP_MARK)) {
+ 		mnl_attr_put_u32(nlh, CTA_MARK, htonl(filter_dump->mark.val));
+ 		mnl_attr_put_u32(nlh, CTA_MARK_MASK, htonl(filter_dump->mark.mask));
++		mnl_attr_put_u32(nlh, CTA_EXTRA_MARK, htonl(filter_dump->mark.extra_val));
++		mnl_attr_put_u32(nlh, CTA_EXTRA_MARK_MASK, htonl(filter_dump->mark.extra_mask));
+ 	}
+ 	if (filter_dump->set & (1 << NFCT_FILTER_DUMP_L3NUM)) {
+ 		nfg = mnl_nlmsg_get_payload(nlh);
+Index: libnetfilter_conntrack-1.0.9/src/conntrack/compare.c
+===================================================================
+--- libnetfilter_conntrack-1.0.9.orig/src/conntrack/compare.c
++++ libnetfilter_conntrack-1.0.9/src/conntrack/compare.c
 @@ -318,7 +318,16 @@ cmp_mark(const struct nf_conntrack *ct1,
  	       nfct_get_attr_u32(ct2, ATTR_MARK);
  }
@@ -67,8 +147,10 @@ This patch is a combination of Netduma patches provided in NG-204909.
  	if (!__cmp(ATTR_TIMEOUT, ct1, ct2, flags, cmp_timeout, true))
  		return 0;
  	if (!__cmp(ATTR_STATUS, ct1, ct2, flags, cmp_status, true))
---- a/src/conntrack/copy.c
-+++ b/src/conntrack/copy.c
+Index: libnetfilter_conntrack-1.0.9/src/conntrack/copy.c
+===================================================================
+--- libnetfilter_conntrack-1.0.9.orig/src/conntrack/copy.c
++++ libnetfilter_conntrack-1.0.9/src/conntrack/copy.c
 @@ -334,6 +334,12 @@ static void copy_attr_mark(struct nf_con
  	dest->mark = orig->mark;
  }
@@ -90,9 +172,11 @@ This patch is a combination of Netduma patches provided in NG-204909.
  	[ATTR_ORIG_COUNTER_PACKETS] 	= copy_attr_orig_counter_packets,
  	[ATTR_ORIG_COUNTER_BYTES]	= copy_attr_orig_counter_bytes,
  	[ATTR_REPL_COUNTER_PACKETS]	= copy_attr_repl_counter_packets,
---- a/src/conntrack/filter_dump.c
-+++ b/src/conntrack/filter_dump.c
-@@ -17,6 +17,8 @@ set_filter_dump_attr_mark(struct nfct_fi
+Index: libnetfilter_conntrack-1.0.9/src/conntrack/filter_dump.c
+===================================================================
+--- libnetfilter_conntrack-1.0.9.orig/src/conntrack/filter_dump.c
++++ libnetfilter_conntrack-1.0.9/src/conntrack/filter_dump.c
+@@ -18,6 +18,8 @@ set_filter_dump_attr_mark(struct nfct_fi
  
  	filter_dump->mark.val = this->val;
  	filter_dump->mark.mask = this->mask;
@@ -101,19 +185,19 @@ This patch is a combination of Netduma patches provided in NG-204909.
  }
  
  static void
-@@ -39,6 +41,10 @@ void __build_filter_dump(struct nfnlhdr
- 				htonl(filter_dump->mark.val));
- 		nfnl_addattr32(&req->nlh, size, CTA_MARK_MASK,
- 				htonl(filter_dump->mark.mask));
-+		nfnl_addattr32(&req->nlh, size, CTA_EXTRA_MARK,
-+				htonl(filter_dump->mark.extra_val));
-+		nfnl_addattr32(&req->nlh, size, CTA_EXTRA_MARK_MASK,
-+				htonl(filter_dump->mark.extra_mask));
- 	}
- 	if (filter_dump->set & (1 << NFCT_FILTER_DUMP_L3NUM)) {
- 		struct nfgenmsg *nfg = NLMSG_DATA(&req->nlh);
---- a/src/conntrack/getter.c
-+++ b/src/conntrack/getter.c
+@@ -28,6 +30,8 @@ set_filter_dump_attr_status(struct nfct_
+ 
+ 	filter_dump->status.val = this->val;
+ 	filter_dump->status.mask = this->mask;
++	filter_dump->mark.extra_val = this->extra_val;
++	filter_dump->mark.extra_mask = this->extra_mask;
+ }
+ 
+ static void
+Index: libnetfilter_conntrack-1.0.9/src/conntrack/getter.c
+===================================================================
+--- libnetfilter_conntrack-1.0.9.orig/src/conntrack/getter.c
++++ libnetfilter_conntrack-1.0.9/src/conntrack/getter.c
 @@ -244,6 +244,11 @@ static const void *get_attr_mark(const s
  	return &ct->mark;
  }
@@ -134,9 +218,11 @@ This patch is a combination of Netduma patches provided in NG-204909.
  	[ATTR_ORIG_COUNTER_PACKETS] 	= get_attr_orig_counter_packets,
  	[ATTR_ORIG_COUNTER_BYTES]	= get_attr_orig_counter_bytes,
  	[ATTR_REPL_COUNTER_PACKETS]	= get_attr_repl_counter_packets,
---- a/src/conntrack/parse_mnl.c
-+++ b/src/conntrack/parse_mnl.c
-@@ -884,6 +884,7 @@ nfct_parse_conntrack_attr_cb(const struc
+Index: libnetfilter_conntrack-1.0.9/src/conntrack/parse_mnl.c
+===================================================================
+--- libnetfilter_conntrack-1.0.9.orig/src/conntrack/parse_mnl.c
++++ libnetfilter_conntrack-1.0.9/src/conntrack/parse_mnl.c
+@@ -883,6 +883,7 @@ nfct_parse_conntrack_attr_cb(const struc
  	case CTA_STATUS:
  	case CTA_TIMEOUT:
  	case CTA_MARK:
@@ -144,7 +230,7 @@ This patch is a combination of Netduma patches provided in NG-204909.
  	case CTA_SECMARK:
  	case CTA_USE:
  	case CTA_ID:
-@@ -972,6 +973,11 @@ nfct_payload_parse(const void *payload,
+@@ -971,6 +972,11 @@ nfct_payload_parse(const void *payload,
  		set_bit(ATTR_MARK, ct->head.set);
  	}
  
@@ -156,9 +242,11 @@ This patch is a combination of Netduma patches provided in NG-204909.
  	if (tb[CTA_SECMARK]) {
  		ct->secmark = ntohl(mnl_attr_get_u32(tb[CTA_SECMARK]));
  		set_bit(ATTR_SECMARK, ct->head.set);
---- a/src/conntrack/setter.c
-+++ b/src/conntrack/setter.c
-@@ -285,6 +285,12 @@ set_attr_mark(struct nf_conntrack *ct, c
+Index: libnetfilter_conntrack-1.0.9/src/conntrack/setter.c
+===================================================================
+--- libnetfilter_conntrack-1.0.9.orig/src/conntrack/setter.c
++++ libnetfilter_conntrack-1.0.9/src/conntrack/setter.c
+@@ -258,6 +258,12 @@ set_attr_mark(struct nf_conntrack *ct, c
  }
  
  static void
@@ -171,7 +259,7 @@ This patch is a combination of Netduma patches provided in NG-204909.
  set_attr_secmark(struct nf_conntrack *ct, const void *value, size_t len)
  {
  	ct->secmark = *((uint32_t *) value);
-@@ -515,6 +521,7 @@ const set_attr set_attr_array[ATTR_MAX]
+@@ -487,6 +493,7 @@ const set_attr set_attr_array[ATTR_MAX]
  	[ATTR_DNAT_PORT]	= set_attr_dnat_port,
  	[ATTR_TIMEOUT]		= set_attr_timeout,
  	[ATTR_MARK]		= set_attr_mark,
@@ -179,9 +267,11 @@ This patch is a combination of Netduma patches provided in NG-204909.
  	[ATTR_ORIG_COUNTER_PACKETS]	= set_attr_do_nothing,
  	[ATTR_REPL_COUNTER_PACKETS]	= set_attr_do_nothing,
  	[ATTR_ORIG_COUNTER_BYTES]	= set_attr_do_nothing,
---- a/src/conntrack/snprintf_default.c
-+++ b/src/conntrack/snprintf_default.c
-@@ -221,6 +221,12 @@ __snprintf_mark(char *buf, unsigned int
+Index: libnetfilter_conntrack-1.0.9/src/conntrack/snprintf_default.c
+===================================================================
+--- libnetfilter_conntrack-1.0.9.orig/src/conntrack/snprintf_default.c
++++ libnetfilter_conntrack-1.0.9/src/conntrack/snprintf_default.c
+@@ -245,6 +245,12 @@ __snprintf_mark(char *buf, unsigned int
  }
  
  static int
@@ -194,7 +284,7 @@ This patch is a combination of Netduma patches provided in NG-204909.
  __snprintf_secmark(char *buf, unsigned int len, const struct nf_conntrack *ct)
  {
  	return (snprintf(buf, len, "secmark=%u ", ct->secmark));
-@@ -449,6 +455,11 @@ int __snprintf_conntrack_default(char *b
+@@ -473,6 +479,11 @@ int __snprintf_conntrack_default(char *b
  		BUFFER_SIZE(ret, size, len, offset);
  	}
  
@@ -206,35 +296,3 @@ This patch is a combination of Netduma patches provided in NG-204909.
  	if (test_bit(ATTR_SECMARK, ct->head.set)) {
  		ret = __snprintf_secmark(buf+offset, len, ct);
  		BUFFER_SIZE(ret, size, len, offset);
---- a/include/libnetfilter_conntrack/libnetfilter_conntrack.h
-+++ b/include/libnetfilter_conntrack/libnetfilter_conntrack.h
-@@ -144,6 +144,7 @@ enum nf_conntrack_attr {
- 	ATTR_SYNPROXY_ISN,			/* u32 bits */
- 	ATTR_SYNPROXY_ITS,			/* u32 bits */
- 	ATTR_SYNPROXY_TSOFF,			/* u32 bits */
-+	ATTR_EXTRA_MARK,
- 	ATTR_MAX
- };
- 
-@@ -540,6 +541,8 @@ struct nfct_filter_dump;
- struct nfct_filter_dump_mark {
- 	uint32_t val;
- 	uint32_t mask;
-+	uint32_t extra_val;
-+	uint32_t extra_mask;
- };
- 
- enum nfct_filter_dump_attr {
---- a/include/libnetfilter_conntrack/linux_nfnetlink_conntrack.h
-+++ b/include/libnetfilter_conntrack/linux_nfnetlink_conntrack.h
-@@ -58,6 +58,10 @@ enum ctattr_type {
- 	CTA_LABELS,
- 	CTA_LABELS_MASK,
- 	CTA_SYNPROXY,
-+	CTA_DPI,
-+	CTA_SGS,
-+	CTA_EXTRA_MARK,
-+	CTA_EXTRA_MARK_MASK,
- 	__CTA_MAX
- };
- #define CTA_MAX (__CTA_MAX - 1)

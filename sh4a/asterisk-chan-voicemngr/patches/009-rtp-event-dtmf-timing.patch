@@ -1,0 +1,43 @@
+Index: asterisk-chan-voicemngr-2.1.0/src/channels/chan_voicemngr.c
+===================================================================
+--- asterisk-chan-voicemngr-2.1.0.orig/src/channels/chan_voicemngr.c
++++ asterisk-chan-voicemngr-2.1.0/src/channels/chan_voicemngr.c
+@@ -3108,7 +3108,7 @@ static void handle_dtmf(enum LINE_EVENT
+ }
+ 
+ static void send_outgoing_dtmf(struct ast_channel *owner, char dtmf_button, int frametype) {
+-	struct ast_frame frame;
++	static struct timeval begin_tv;
+ 
+ 	if (!owner) return;
+ 
+@@ -3122,13 +3122,22 @@ static void send_outgoing_dtmf(struct as
+ 		return;
+ 	}
+ 
+-	memset(&frame, 0, sizeof frame);
+-	ast_debug(2, "Sending DTMF %c %s\n", dtmf_button, ast_channel_name(owner));
+-	frame.src = chan_voicemngr_tech.type;
+-	frame.frametype = frametype;
+-	frame.subclass.integer = dtmf_button;
+-
+-	ast_queue_frame(owner, &frame);
++	enum ast_channel_state state = AST_STATE_UP;
++	struct ast_channel *pjsip_chan = ast_channel_get_by_state_and_prefix(&state, "PJSIP");
++	if(pjsip_chan) {
++		if(frametype == AST_FRAME_DTMF_BEGIN) {
++			ast_senddigit_begin(pjsip_chan, dtmf_button);
++			begin_tv = ast_tvnow();
++		} else {
++			int end = ast_tvdiff_ms(ast_tvnow(), begin_tv);
++			ast_debug(1, "Sending end for duration %dms\n", end);
++			ast_senddigit_end(pjsip_chan, dtmf_button, end);
++		}
++		ast_debug(1, "Sent digit %c into channel %s\n", dtmf_button, ast_channel_name(pjsip_chan));
++		ast_channel_unref(pjsip_chan);
++	} else {
++		ast_debug(1, "PJSIP channel not found\n");
++	}
+ }
+ 
+ /* Get asterisk format from RTP payload type */

@@ -1,0 +1,45 @@
+--- a/src/channels/chan_voicemngr.c
++++ b/src/channels/chan_voicemngr.c
+@@ -4880,6 +4880,7 @@ enum {
+ 	RTP_STATS_MAX_JITTER,
+ 	RTP_STATS_OVERRUNS,
+ 	RTP_STATS_UNDERRUNS,
++	RTP_STATS_FRAMES_DISCARDED,
+ 	__MAX_RTP_STATS,
+ };
+ 
+@@ -4912,6 +4913,7 @@ static const struct blobmsg_policy endpt
+ 	[RTP_STATS_MAX_JITTER] = { .name = "maxJitter", .type = BLOBMSG_TYPE_INT32 },
+ 	[RTP_STATS_OVERRUNS] = { .name = "overruns", .type = BLOBMSG_TYPE_INT16 },
+ 	[RTP_STATS_UNDERRUNS] = { .name = "underruns", .type = BLOBMSG_TYPE_INT16 },
++	[RTP_STATS_FRAMES_DISCARDED] = { .name = "framesDiscarded", .type = BLOBMSG_TYPE_INT32 },
+ };
+ 
+ // Reception of event
+@@ -5084,6 +5086,8 @@ static void ubus_call_answer_rtp_stats(s
+ 			line_stats[sip_client_id].total_underruns += underruns;
+ 		}
+ 	}
++	if (tb[RTP_STATS_FRAMES_DISCARDED])
++		sub->rtp_stats.framesDiscarded = blobmsg_get_u32(tb[RTP_STATS_FRAMES_DISCARDED]);
+ 	sub->rtp_stats.farEndInterarrivalJitter = sub->farEndInterarrivalJitter;
+ 	sub->rtp_stats.receiveInterarrivalJitter = sub->receiveInterarrivalJitter;
+ 	sub->rtp_stats.averageFarEndInterarrivalJitter = sub->ingressRtcpPackets ? (sub->totalFarEndInterarrivalJitter / sub->ingressRtcpPackets) : 0;
+@@ -5099,7 +5103,7 @@ static void ubus_call_answer_rtp_stats(s
+ 			"remoteJbAbsMax: %d, discarded: %d, lost: %d, rxpkts: %d, txpkts: %d, "
+ 			"jbAvg: %d, jitter: %d, localLossRate: %d, remoteLossRate: %d, maxJitter: %d, farEndInterarrivalJitter: %d,"
+ 			"averageFarEndInterarrivalJitter: %d, receiveInterarrivalJitter: %d, averageReceiveInterarrivalJitter: %d, "
+-			"localAvgRoundTripDelay: %d, remoteAvgRoundTripDelay: %d, overruns: %d, underruns: %d\n",
++			"localAvgRoundTripDelay: %d, remoteAvgRoundTripDelay: %d, overruns: %d, underruns: %d, framesDiscarded: %d\n",
+ 			sub->rtp_stats.localBurstDensity, sub->rtp_stats.remoteBurstDensity, sub->rtp_stats.localBurstDuration,
+ 			sub->rtp_stats.remoteBurstDuration, sub->rtp_stats.localGapDensity, sub->rtp_stats.remoteGapDensity,
+ 			sub->rtp_stats.localGapDuration, sub->rtp_stats.remoteGapDuration, sub->rtp_stats.localJbRate,
+@@ -5108,7 +5112,7 @@ static void ubus_call_answer_rtp_stats(s
+ 			sub->rtp_stats.lost, sub->rtp_stats.rxpkts, sub->rtp_stats.txpkts, sub->rtp_stats.jbAvg, sub->rtp_stats.jitter,
+ 			sub->rtp_stats.localLossRate, sub->rtp_stats.remoteLossRate, sub->rtp_stats.maxJitter, sub->rtp_stats.farEndInterarrivalJitter,
+ 			sub->rtp_stats.averageFarEndInterarrivalJitter, sub->rtp_stats.receiveInterarrivalJitter, sub->rtp_stats.averageReceiveInterarrivalJitter,
+-			sub->rtp_stats.localAvgRoundTripDelay, sub->rtp_stats.remoteAvgRoundTripDelay, overruns, underruns);
++			sub->rtp_stats.localAvgRoundTripDelay, sub->rtp_stats.remoteAvgRoundTripDelay, overruns, underruns, sub->rtp_stats.framesDiscarded);
+ }
+ 
+ static int endpt_get_rtp_stats(int line) {

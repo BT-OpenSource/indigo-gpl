@@ -1,6 +1,6 @@
 --- a/src/forward.c
 +++ b/src/forward.c
-@@ -105,6 +105,17 @@ int send_from(int fd, int nowild, char *
+@@ -108,6 +108,17 @@ int send_from(int fd, int nowild, char *
    
    return 1;
  }
@@ -16,9 +16,9 @@
 +  return NULL;
 +}
            
- static unsigned int search_servers(time_t now, union all_addr **addrpp, unsigned int qtype,
- 				   char *qdomain, int *type, char **domain, int *norebind)
-@@ -256,6 +267,13 @@ static void set_outgoing_mark(struct fre
+ #ifdef HAVE_CONNTRACK
+ static void set_outgoing_mark(struct frec *forward, int fd)
+@@ -119,6 +130,13 @@ static void set_outgoing_mark(struct fre
  }
  #endif
  
@@ -29,31 +29,31 @@
 +  setsockopt(fd, SOL_SOCKET, SO_PRIORITY, &cos, sizeof(cos));
 +}
 +
- static void log_query_mysockaddr(unsigned int flags, char *name, union mysockaddr *addr, char *arg)
+ static void log_query_mysockaddr(unsigned int flags, char *name, union mysockaddr *addr, char *arg, unsigned short type)
  {
    if (addr->sa.sa_family == AF_INET)
-@@ -566,6 +584,7 @@ static int forward_query(int udpfd, unio
- 	  if (server_test_type(start, domain, type, 0) &&
- 	      ((fd = allocate_rfd(&forward->rfds, start)) != -1))
- 	    {
-+		  struct domain_record *domain;
- 	      
+@@ -450,6 +468,7 @@ static int forward_query(int udpfd, unio
+       
+       if ((fd = allocate_rfd(&forward->rfds, srv)) != -1)
+ 	{
++	  struct domain_record *domain;
+ 	  
  #ifdef HAVE_CONNTRACK
- 	      /* Copy connection mark of incoming query to outgoing connection. */
-@@ -573,6 +592,10 @@ static int forward_query(int udpfd, unio
- 		set_outgoing_mark(forward, fd);
+ 	  /* Copy connection mark of incoming query to outgoing connection. */
+@@ -457,6 +476,10 @@ static int forward_query(int udpfd, unio
+ 	    set_outgoing_mark(forward, fd);
  #endif
- 	      
-+	      domain = get_prioritized_domain_rec(daemon->namebuff, daemon->prioritized_domains);
-+	      if (domain)
-+		set_priority(fd, domain->tos, domain->cos);
+ 	  
++	  domain = get_prioritized_domain_rec(daemon->namebuff, daemon->prioritized_domains);
++	  if (domain)
++	    set_priority(fd, domain->tos, domain->cos);
 +
  #ifdef HAVE_DNSSEC
- 	      if (option_bool(OPT_DNSSEC_VALID) && (forward->flags & FREC_ADDED_PHEADER))
- 		{
+ 	  if (option_bool(OPT_DNSSEC_VALID) && (forward->flags & FREC_ADDED_PHEADER))
+ 	    {
 --- a/src/dnsmasq.h
 +++ b/src/dnsmasq.h
-@@ -371,6 +371,12 @@ struct ptr_record {
+@@ -378,6 +378,12 @@ struct ptr_record {
    struct ptr_record *next;
  };
  
@@ -66,7 +66,7 @@
  struct cname {
    int ttl, flag;
    char *alias, *target;
-@@ -1032,6 +1038,7 @@ extern struct daemon {
+@@ -1085,6 +1091,7 @@ extern struct daemon {
    struct naptr *naptr;
    struct txt_record *txt, *rr;
    struct ptr_record *ptr;
@@ -76,31 +76,31 @@
    struct auth_zone *auth_zones;
 --- a/src/option.c
 +++ b/src/option.c
-@@ -171,6 +171,7 @@ struct myoption {
- #define LOPT_DYNHOST       362
- #define LOPT_LOG_DEBUG     363
- #define LOPT_USER_HOSTNAME 364
-+#define LOPT_PRIORITIZED_DOMAIN_NAMES 365
-  
+@@ -187,6 +187,7 @@ struct myoption {
+ #define LOPT_NORR          378
+ #define LOPT_NO_IDENT      379
+ #define LOPT_USER_HOSTNAME 380
++#define LOPT_PRIORITIZED_DOMAIN_NAMES 381
+ 
  #ifdef HAVE_GETOPT_LONG
  static const struct option opts[] =  
-@@ -347,6 +348,7 @@ static const struct myoption opts[] =
-     { "dynamic-host", 1, 0, LOPT_DYNHOST },
-     { "log-debug", 0, 0, LOPT_LOG_DEBUG },
-     { "add-userhostname", 1, 0, LOPT_USER_HOSTNAME},
-+    { "prioritised-domain", 1, 0, LOPT_PRIORITIZED_DOMAIN_NAMES},
+@@ -378,6 +379,7 @@ static const struct myoption opts[] =
+     { "use-stale-cache", 2, 0 , LOPT_STALE_CACHE },
+     { "no-ident", 0, 0, LOPT_NO_IDENT },
+ 	{ "add-userhostname", 1, 0, LOPT_USER_HOSTNAME},
++	{ "prioritised-domain", 1, 0, LOPT_PRIORITIZED_DOMAIN_NAMES},
      { NULL, 0, 0, 0 }
    };
  
-@@ -530,6 +532,7 @@ static struct {
-   { LOPT_DUMPMASK, ARG_ONE, "<hex>", gettext_noop("Mask which packets to dump"), NULL },
-   { LOPT_SCRIPT_TIME, OPT_LEASE_RENEW, NULL, gettext_noop("Call dhcp-script when lease expiry changes."), NULL },
+@@ -542,6 +544,7 @@ static struct {
+   { LOPT_UMBRELLA, ARG_ONE, "[=<optspec>]", gettext_noop("Send Cisco Umbrella identifiers including remote IP."), NULL },
+   { LOPT_QUIET_TFTP, OPT_QUIET_TFTP, NULL, gettext_noop("Do not log routine TFTP."), NULL },
    { LOPT_USER_HOSTNAME, ARG_ONE, "<host_name>", gettext_noop("Default hostname if no hostname provided by the DHCP client."), NULL },
 +  { LOPT_PRIORITIZED_DOMAIN_NAMES, ARG_DUP, "<domain_name>,<tos>,<cos>", gettext_noop("Set tos/cos priority of domain_name"), NULL },
    { 0, 0, NULL, NULL, NULL }
  }; 
  
-@@ -2120,6 +2123,26 @@ static int one_opt(int option, char *arg
+@@ -2141,6 +2144,26 @@ static int one_opt(int option, char *arg
  	} while (arg);
  	break;
        }

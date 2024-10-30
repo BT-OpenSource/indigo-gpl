@@ -1,0 +1,434 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 8064485..dd1c53a 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -26,7 +26,7 @@ SET(SOURCES
+ 	iprule.c proto.c proto-static.c proto-shell.c
+ 	config.c device.c bridge.c veth.c vlan.c alias.c
+ 	macvlan.c ubus.c vlandev.c wireless.c
+-	extdev.c bonding.c)
++	extdev.c bonding.c asymmetric-vlandev.c)
+ 
+ 
+ FIND_LIBRARY(uci NAMES uci)
+diff --git a/asymmetric-vlandev.c b/asymmetric-vlandev.c
+new file mode 100644
+index 0000000..a1ec5eb
+--- /dev/null
++++ b/asymmetric-vlandev.c
+@@ -0,0 +1,346 @@
++#include <string.h>
++#include <inttypes.h>
++
++#include "netifd.h"
++#include "device.h"
++#include "interface.h"
++#include "system.h"
++#include "utils.h"
++
++enum {
++	ASYM_VLANDEV_ATTR_IFNAME,
++	ASYM_VLANDEV_ATTR_NAME,
++	ASYM_VLANDEV_ATTR_TX_VID,
++	__ASYM_VLANDEV_ATTR_MAX
++};
++
++static const struct blobmsg_policy asym_vlandev_attrs[__ASYM_VLANDEV_ATTR_MAX] = {
++	[ASYM_VLANDEV_ATTR_IFNAME] = { "ifname", BLOBMSG_TYPE_STRING },
++	[ASYM_VLANDEV_ATTR_NAME] = { "name", BLOBMSG_TYPE_STRING },
++	[ASYM_VLANDEV_ATTR_TX_VID] = { "tx_vid", BLOBMSG_TYPE_STRING },
++};
++
++static const struct uci_blob_param_list asym_vlandev_attr_list = {
++	.n_params = __ASYM_VLANDEV_ATTR_MAX,
++	.params = asym_vlandev_attrs,
++
++	.n_next = 1,
++	.next = { &device_attr_list },
++};
++
++static struct device_type asym_vlan_device_type;
++static struct blob_buf b;
++
++struct asym_vlandev_device {
++	struct device dev;
++	struct device_user parent;
++
++	device_state_cb set_state;
++
++	struct blob_attr *config_data;
++	struct blob_attr *ifname;
++	struct blob_attr *name;
++	struct blob_attr *tx_vid;
++
++	struct asym_vlandev_config config;
++};
++
++static int
++__asym_vlandev_hotplug_op(struct device *dev, struct device *member, struct blob_attr *vlan, bool add)
++{
++	struct asym_vlandev_device *avdev = container_of(dev, struct asym_vlandev_device, dev);
++	void *a;
++
++	dev = avdev->parent.dev;
++	if (!dev || !dev->hotplug_ops)
++		return UBUS_STATUS_NOT_SUPPORTED;
++
++	blob_buf_init(&b, 0);
++	a = blobmsg_open_array(&b, "vlans");
++	blobmsg_printf(&b, NULL, "%d:u", avdev->config.tx_vid);
++	if (vlan && blobmsg_len(vlan))
++		blob_put_raw(&b, blobmsg_data(vlan), blobmsg_len(vlan));
++	blobmsg_close_array(&b, a);
++
++	if (add)
++		return dev->hotplug_ops->add(dev, member, blobmsg_data(b.head));
++	else
++		return dev->hotplug_ops->del(dev, member, blobmsg_data(b.head));
++}
++
++static int
++asym_vlandev_hotplug_add(struct device *dev, struct device *member, struct blob_attr *vlan)
++{
++	return __asym_vlandev_hotplug_op(dev, member, vlan, true);
++}
++
++static int
++asym_vlandev_hotplug_del(struct device *dev, struct device *member, struct blob_attr *vlan)
++{
++	return __asym_vlandev_hotplug_op(dev, member, vlan, false);
++}
++
++static int
++asym_vlandev_hotplug_prepare(struct device *dev, struct device **bridge_dev)
++{
++	struct asym_vlandev_device *avdev = container_of(dev, struct asym_vlandev_device, dev);
++
++	dev = avdev->parent.dev;
++	if (!dev || !dev->hotplug_ops)
++		return UBUS_STATUS_NOT_SUPPORTED;
++
++	return dev->hotplug_ops->prepare(dev, bridge_dev);
++}
++
++static void asym_vlandev_hotplug_check(struct asym_vlandev_device *avdev)
++{
++	static const struct device_hotplug_ops hotplug_ops = {
++		.prepare = asym_vlandev_hotplug_prepare,
++		.add = asym_vlandev_hotplug_add,
++		.del = asym_vlandev_hotplug_del
++	};
++	struct device *dev = avdev->parent.dev;
++
++	if (!dev || !dev->hotplug_ops || avl_is_empty(&dev->vlans.avl)) {
++		avdev->dev.hotplug_ops = NULL;
++		return;
++	}
++
++	avdev->dev.hotplug_ops = &hotplug_ops;
++}
++
++static void
++asym_vlandev_base_cb(struct device_user *dev, enum device_event ev)
++{
++	struct asym_vlandev_device *avdev = container_of(dev, struct asym_vlandev_device, parent);
++
++	switch (ev) {
++	case DEV_EVENT_ADD:
++		device_set_present(&avdev->dev, true);
++		break;
++	case DEV_EVENT_REMOVE:
++		device_set_present(&avdev->dev, false);
++		break;
++	case DEV_EVENT_UPDATE_IFNAME:
++		asym_vlandev_hotplug_check(avdev);
++		break;
++	case DEV_EVENT_TOPO_CHANGE:
++		/* Propagate topo changes */
++		device_broadcast_event(&avdev->dev, DEV_EVENT_TOPO_CHANGE);
++		break;
++	default:
++		return;
++	}
++}
++
++static int
++asym_vlandev_set_down(struct asym_vlandev_device *avdev)
++{
++	avdev->set_state(&avdev->dev, false);
++	(void)system_asym_vlandev_del(&avdev->dev, avdev->parent.dev);
++	device_release(&avdev->parent);
++
++	return 0;
++}
++
++static int
++asym_vlandev_set_up(struct asym_vlandev_device *avdev)
++{
++	int ret;
++
++	ret = device_claim(&avdev->parent);
++	if (ret < 0)
++		return ret;
++
++	ret = system_asym_vlandev_add(&avdev->dev, avdev->parent.dev, &avdev->config);
++	if (ret < 0)
++		goto release;
++
++	ret = avdev->set_state(&avdev->dev, true);
++	if (ret)
++		goto delete;
++
++	return 0;
++
++delete:
++	(void)system_asym_vlandev_del(&avdev->dev, avdev->parent.dev);
++release:
++	device_release(&avdev->parent);
++	return ret;
++}
++
++static int
++asym_vlandev_set_state(struct device *dev, bool up)
++{
++	struct asym_vlandev_device *avdev;
++
++	D(SYSTEM, "asym_vlandev_set_state(%s, %u)\n", dev->ifname, up);
++
++	avdev = container_of(dev, struct asym_vlandev_device, dev);
++	if (up)
++		return asym_vlandev_set_up(avdev);
++	else
++		return asym_vlandev_set_down(avdev);
++}
++
++static void
++asym_vlandev_free(struct device *dev)
++{
++	struct asym_vlandev_device *avdev;
++
++	avdev = container_of(dev, struct asym_vlandev_device, dev);
++	device_remove_user(&avdev->parent);
++	free(avdev->config_data);
++	free(avdev);
++}
++
++static void
++asym_vlandev_dump_info(struct device *dev, struct blob_buf *b)
++{
++	struct asym_vlandev_device *avdev;
++
++	avdev = container_of(dev, struct asym_vlandev_device, dev);
++	blobmsg_add_string(b, "parent", avdev->parent.dev->ifname);
++	system_if_dump_info(dev, b);
++	blobmsg_add_u32(b, "tx_vid", avdev->config.tx_vid);
++}
++
++static uint16_t
++asym_vlandev_get_tx_vid(struct device *dev, const char *id_str)
++{
++	unsigned long id;
++	uint16_t *alias_id;
++	char *err;
++
++	id = strtoul(id_str, &err, 10);
++	if (err && *err) {
++		if (!dev)
++			return 1;
++
++		alias_id = kvlist_get(&dev->vlan_aliases, id_str);
++		if (!alias_id)
++			return 1;
++
++		id = *alias_id;
++	}
++
++	return (uint16_t)id;
++}
++
++static void
++asym_vlandev_config_init(struct device *dev)
++{
++	struct asym_vlandev_device *avdev;
++	struct device *basedev = NULL;
++
++	avdev = container_of(dev, struct asym_vlandev_device, dev);
++	if (avdev->ifname)
++		basedev = device_get(blobmsg_data(avdev->ifname), true);
++
++	if (avdev->tx_vid)
++		avdev->config.tx_vid = asym_vlandev_get_tx_vid(basedev, blobmsg_get_string(avdev->tx_vid));
++	else
++		avdev->config.tx_vid = 1;
++
++	device_add_user(&avdev->parent, basedev);
++	asym_vlandev_hotplug_check(avdev);
++}
++
++static void
++asym_vlandev_apply_settings(struct asym_vlandev_device *avdev, struct blob_attr **tb)
++{
++	// Nothing to do
++	return;
++}
++
++static enum dev_change_type
++asym_vlandev_reload(struct device *dev, struct blob_attr *attr)
++{
++	struct blob_attr *tb_dev[__DEV_ATTR_MAX];
++	struct blob_attr *tb_mv[__ASYM_VLANDEV_ATTR_MAX];
++	enum dev_change_type ret = DEV_CONFIG_APPLIED;
++	struct asym_vlandev_device *avdev;
++
++	avdev = container_of(dev, struct asym_vlandev_device, dev);
++	attr = blob_memdup(attr);
++
++	blobmsg_parse(device_attr_list.params, __DEV_ATTR_MAX, tb_dev,
++		blob_data(attr), blob_len(attr));
++	blobmsg_parse(asym_vlandev_attrs, __ASYM_VLANDEV_ATTR_MAX, tb_mv,
++		blob_data(attr), blob_len(attr));
++
++	device_init_settings(dev, tb_dev);
++	asym_vlandev_apply_settings(avdev, tb_mv);
++	avdev->ifname = tb_mv[ASYM_VLANDEV_ATTR_IFNAME];
++	avdev->tx_vid = tb_mv[ASYM_VLANDEV_ATTR_TX_VID];
++
++	if (avdev->config_data) {
++		struct blob_attr *otb_dev[__DEV_ATTR_MAX];
++		struct blob_attr *otb_mv[__ASYM_VLANDEV_ATTR_MAX];
++
++		blobmsg_parse(device_attr_list.params, __DEV_ATTR_MAX, otb_dev,
++			blob_data(avdev->config_data), blob_len(avdev->config_data));
++
++		if (uci_blob_diff(tb_dev, otb_dev, &device_attr_list, NULL))
++		    ret = DEV_CONFIG_RESTART;
++
++		blobmsg_parse(asym_vlandev_attrs, __ASYM_VLANDEV_ATTR_MAX, otb_mv,
++			blob_data(avdev->config_data), blob_len(avdev->config_data));
++
++		if (uci_blob_diff(tb_mv, otb_mv, &asym_vlandev_attr_list, NULL))
++		    ret = DEV_CONFIG_RESTART;
++	}
++
++	asym_vlandev_config_init(dev);
++
++	free(avdev->config_data);
++	avdev->config_data = attr;
++	return ret;
++}
++
++static struct device *
++asym_vlandev_create(const char *name, struct device_type *devtype,
++	       struct blob_attr *attr)
++{
++	struct asym_vlandev_device *avdev;
++	struct device *dev = NULL;
++
++	avdev = calloc(1, sizeof(*avdev));
++	if (!avdev)
++		return NULL;
++
++	dev = &avdev->dev;
++
++	if (device_init(dev, devtype, name) < 0) {
++		device_cleanup(dev);
++		free(avdev);
++		return NULL;
++	}
++
++	dev->config_pending = true;
++
++	avdev->set_state = dev->set_state;
++	dev->set_state = asym_vlandev_set_state;
++
++	dev->hotplug_ops = NULL;
++	avdev->parent.cb = asym_vlandev_base_cb;
++
++	asym_vlandev_reload(dev, attr);
++
++	return dev;
++}
++
++static struct device_type asym_vlan_device_type = {
++	.name = "asymmetric-vlan",
++	.config_params = &asym_vlandev_attr_list,
++	.create = asym_vlandev_create,
++	.config_init = asym_vlandev_config_init,
++	.reload = asym_vlandev_reload,
++	.free = asym_vlandev_free,
++	.dump_info = asym_vlandev_dump_info,
++};
++
++static void __init asym_vlandev_device_type_init(void)
++{
++	device_type_add(&asym_vlan_device_type);
++}
+diff --git a/system-linux.c b/system-linux.c
+index 21110c5..bd46a63 100644
+--- a/system-linux.c
++++ b/system-linux.c
+@@ -22,6 +22,7 @@
+ #include <sys/ioctl.h>
+ #include <sys/stat.h>
+ #include <sys/syscall.h>
++#include <stdlib.h>
+ 
+ #include <net/if.h>
+ #include <net/if_arp.h>
+@@ -1712,6 +1714,31 @@ int system_vlandev_del(struct device *vlandev)
+ 	return system_link_del(vlandev->ifname);
+ }
+ 
++static const char asym_cmd[]="/sbin/asymmetric-vlan-conf.sh";
++int system_asym_vlandev_add(struct device *asym_vlandev, struct device *dev, struct asym_vlandev_config *cfg)
++{
++	char cmd[BUFSIZ];
++
++	if (!snprintf (cmd, BUFSIZ,
++			"%s --add --phys-if \"%s\" --vlan-if \"%s\" --tx-vid \"%u\"",
++			asym_cmd, dev->ifname, asym_vlandev->ifname, cfg->tx_vid))
++		return -1;
++
++	return system(cmd);
++}
++
++int system_asym_vlandev_del(struct device *asym_vlandev, struct device *dev)
++{
++	char cmd[BUFSIZ];
++
++	if (!snprintf (cmd, BUFSIZ,
++			"%s --delete --phys-if \"%s\" --vlan-if \"%s\"",
++			asym_cmd, dev->ifname, asym_vlandev->ifname))
++		return -1;
++
++	return system(cmd);
++}
++
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,1,0)
+ struct if_get_master_data {
+ 	int ifindex;
+diff --git a/system.h b/system.h
+index 890966b..451247a 100644
+--- a/system.h
++++ b/system.h
+@@ -184,6 +184,10 @@ struct vlandev_config {
+ 	struct vlist_simple_tree egress_qos_mapping_list;  /* list of struct vlan_qos_mapping */
+ };
+ 
++struct asym_vlandev_config {
++	uint16_t tx_vid;
++};
++
+ enum bonding_mode {
+ 	BONDING_MODE_BALANCE_RR,
+ 	BONDING_MODE_ACTIVE_BACKUP,
+@@ -265,6 +269,9 @@ int system_vlan_del(struct device *dev);
+ int system_vlandev_add(struct device *vlandev, struct device *dev, struct vlandev_config *cfg);
+ int system_vlandev_del(struct device *vlandev);
+ 
++int system_asym_vlandev_add(struct device *asym_vlandev, struct device *dev, struct asym_vlandev_config *cfg);
++int system_asym_vlandev_del(struct device *asym_vlandev, struct device *dev);
++
+ void system_if_get_settings(struct device *dev, struct device_settings *s);
+ void system_if_clear_state(struct device *dev);
+ int system_if_up(struct device *dev);

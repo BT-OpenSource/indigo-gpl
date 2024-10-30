@@ -347,15 +347,6 @@ diff --git a/main.c b/main.c
 index 7040a7e..99080f0 100644
 --- a/main.c
 +++ b/main.c
-@@ -54,7 +54,7 @@ int main(int argc, char **argv)
- {
- 	const char *ubus_socket = NULL;
- 	struct ubus_context *ctx = NULL;
--	int ch, ret;
-+	int ch;
- 	pthread_t evtid;
- 	pthread_attr_t attr;
- 
 @@ -70,6 +70,8 @@ int main(int argc, char **argv)
  	argc -= optind;
  	argv += optind;
@@ -365,14 +356,13 @@ index 7040a7e..99080f0 100644
  	if (pthread_attr_init(&attr) == 0) {
  		struct sched_param sp;
  
-@@ -102,6 +104,7 @@ int main(int argc, char **argv)
+@@ -104,6 +104,7 @@ int main(int argc, char **argv)
  __ret:
  	ubus_free(ctx);
  	uloop_done();
 +	DSLMNGR_LOG(LOG_INFO, "Stopping dslmngr...");
  
--	return ret;
-+	return 0;
+	return 0;
  }
 diff --git a/test/api/json/dsl.validation.json b/test/api/json/dsl.validation.json
 index 32c5bbc..0bedd6a 100644

@@ -1,0 +1,16 @@
+--- a/wifi.c
++++ b/wifi.c
+@@ -704,11 +704,11 @@
+ int wifi_get_curr_opclass(const char *name, struct wifi_opclass *o)
+ {
+ 	const struct wifi_driver *drv = get_wifi_driver(name);
+-	int ret = -ENOTSUP;
++	int ret = 0;
+ 
+ 	ENTER();
+ 	ret = drv_op(drv, get_curr_opclass, name, o);
+-	if (ret == -ENOTSUP)
++	if (ret != 0)
+ 		ret = wifi_get_opclass(name, o);
+ 
+ 	EXIT(ret);

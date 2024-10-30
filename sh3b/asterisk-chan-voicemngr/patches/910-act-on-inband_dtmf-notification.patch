@@ -1,0 +1,83 @@
+diff --git a/src/channels/chan_voicemngr.c b/src/channels/chan_voicemngr.c
+index 20bae56..1d0ee91 100644
+--- a/src/channels/chan_voicemngr.c
++++ b/src/channels/chan_voicemngr.c
+@@ -251,6 +251,7 @@ int dtmf_wait_timer = 2000; /*Time to wait for dtmf(for R4 call setup) before se
+ 
+ static bool internet_connection = false;
+ static bool voice_test_mode = false;
++static bool inband_dtmf = false;
+ 
+ enum {
+ 	EVENT_TYPE,
+@@ -501,6 +502,7 @@ static struct endpt_event event_map[] = {
+ 	{ .name = "BLOCK", .event = EVENT_BLOCK },
+ 	{ .name = "LINE_CALL_MODE_SINGLE", .event = EVENT_LINE_CALL_MODE_SINGLE},
+ 	{ .name = "LINE_CALL_MODE_MULTIPLE", .event = EVENT_LINE_CALL_MODE_MULTIPLE},
++	{ .name = "INBAND_DTMF", .event = EVENT_INBAND_DTMF},
+ 	{ .name = "", .event = EVENT_LAST },
+ };
+ 
+@@ -2154,6 +2156,12 @@ static struct ast_channel *chan_voicemngr_new(struct chan_voicemngr_subchannel *
+ 				ast_hangup(chan);
+ 				return NULL;
+ 			}
++
++			// set the variable in this channel - the pbx will copy it to the PJSIP channel where it's needed
++			if (inband_dtmf == 1) {
++				pbx_builtin_setvar_helper(chan, "INBAND_DTMF", "on");
++			}
++
+ 		}
+ 
+ 		ast_channel_unlock(chan);
+@@ -3582,6 +3590,12 @@ static void chan_voicemngr_process_event(struct endpt_event *ev)
+ 		return;
+ 	}
+ 
++	if (ev->event == EVENT_INBAND_DTMF) {
++		ast_debug(3, "Enabling INBAND_DTMF");
++		inband_dtmf = 1;
++		return;
++	}
++
+ 	pvt_lock(p, "chan_voicemngr monitor events");
+ 	sub = chan_voicemngr_get_active_subchannel(p);
+ 	sub_peer = chan_voicemngr_subchannel_get_peer(sub);
+@@ -3623,6 +3637,7 @@ static void chan_voicemngr_process_event(struct endpt_event *ev)
+ 		switch (ev->event) {
+ 		case EVENT_OFFHOOK: {
+ 			int sip_client_id = -1;
++			inband_dtmf = 0;
+ 			sscanf(sub->parent->context, "sip%d", &sip_client_id);
+ 			if (has_call_in_sip_client(p->context) && sip_line_callmode[sip_client_id] == LINE_CALL_MODE_SINGLE) {
+ 				ast_log(LOG_NOTICE, "The call cannot be proceeded. Line is in single call mode and other extension is in call!\n");
+@@ -3726,6 +3741,7 @@ static void chan_voicemngr_process_event(struct endpt_event *ev)
+ 			break;
+ 		}
+ 		case EVENT_ONHOOK: {
++			inband_dtmf = 0;
+ 			strncpy(p->extensionCallStatus, "Idle", CALL_STATUS_MAX_LEN);
+ 			if (sub->congestion_timer_id != -1) {
+ 				if(ast_sched_del(sched, sub->congestion_timer_id)){
+@@ -3904,7 +3920,7 @@ static void chan_voicemngr_process_event(struct endpt_event *ev)
+ 		case EVENT_LINE_CALL_MODE_MULTIPLE:
+ 			ast_debug(1, "EVENT %d from dect received\n", ev->event);
+ 			sip_line_callmode[ev->line] = ev->event == EVENT_LINE_CALL_MODE_SINGLE ? LINE_CALL_MODE_SINGLE : LINE_CALL_MODE_MULTIPLE;
+-
++			break;
+ 		default:
+ 			ast_debug(1, "Ignore event %s\n", ev->name);
+ 			break;
+diff --git a/src/channels/chan_voicemngr.h b/src/channels/chan_voicemngr.h
+index c0a80a2..484fe36 100644
+--- a/src/channels/chan_voicemngr.h
++++ b/src/channels/chan_voicemngr.h
+@@ -86,6 +86,7 @@ enum LINE_EVENT { // Events from low level line (endpoint etc.)
+ 	EVENT_BLOCK,
+ 	EVENT_LINE_CALL_MODE_SINGLE,
+ 	EVENT_LINE_CALL_MODE_MULTIPLE,
++	EVENT_INBAND_DTMF,
+ 	EVENT_LAST,
+ };
+ 

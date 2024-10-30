@@ -1,10 +1,10 @@
-© Netduma Software Ltd 2021
-
 Added extra_mark to skb and ct.
 This patch is a combination of Netduma patches provided in NG-204909.
 
---- a/include/libnetfilter_queue/libnetfilter_queue.h
-+++ b/include/libnetfilter_queue/libnetfilter_queue.h
+Index: libnetfilter_queue-1.0.5/include/libnetfilter_queue/libnetfilter_queue.h
+===================================================================
+--- libnetfilter_queue-1.0.5.orig/include/libnetfilter_queue/libnetfilter_queue.h
++++ libnetfilter_queue-1.0.5/include/libnetfilter_queue/libnetfilter_queue.h
 @@ -72,6 +72,14 @@ extern int nfq_set_verdict2(struct nfq_q
  			    uint32_t datalen,
  			    const unsigned char *buf);
@@ -28,8 +28,10 @@ This patch is a combination of Netduma patches provided in NG-204909.
  
  extern int nfq_get_timestamp(struct nfq_data *nfad, struct timeval *tv);
  
---- a/include/libnetfilter_queue/linux_nfnetlink_queue.h
-+++ b/include/libnetfilter_queue/linux_nfnetlink_queue.h
+Index: libnetfilter_queue-1.0.5/include/libnetfilter_queue/linux_nfnetlink_queue.h
+===================================================================
+--- libnetfilter_queue-1.0.5.orig/include/libnetfilter_queue/linux_nfnetlink_queue.h
++++ libnetfilter_queue-1.0.5/include/libnetfilter_queue/linux_nfnetlink_queue.h
 @@ -54,9 +54,13 @@ enum nfqnl_attr_type {
  	NFQA_UID,			/* __u32 sk uid */
  	NFQA_GID,			/* __u32 sk gid */
@@ -44,8 +46,10 @@ This patch is a combination of Netduma patches provided in NG-204909.
  #define NFQA_MAX (__NFQA_MAX - 1)
  
  struct nfqnl_msg_verdict_hdr {
+Index: libnetfilter_queue-1.0.5/include/xt_connmark_idx.h
+===================================================================
 --- /dev/null
-+++ b/include/xt_connmark_idx.h
++++ libnetfilter_queue-1.0.5/include/xt_connmark_idx.h
 @@ -0,0 +1,40 @@
 +#ifndef _XT_CONNMARK_H
 +#define _XT_CONNMARK_H
@@ -87,8 +91,10 @@ This patch is a combination of Netduma patches provided in NG-204909.
 +};
 +
 +#endif /*_XT_CONNMARK_H*/
+Index: libnetfilter_queue-1.0.5/include/xt_mark_idx.h
+===================================================================
 --- /dev/null
-+++ b/include/xt_mark_idx.h
++++ libnetfilter_queue-1.0.5/include/xt_mark_idx.h
 @@ -0,0 +1,24 @@
 +#ifndef _XT_MARK_H
 +#define _XT_MARK_H
@@ -114,9 +120,11 @@ This patch is a combination of Netduma patches provided in NG-204909.
 +};
 +
 +#endif /*_XT_MARK_H*/
---- a/src/libnetfilter_queue.c
-+++ b/src/libnetfilter_queue.c
-@@ -774,12 +774,13 @@ int nfq_set_queue_maxlen(struct nfq_q_handle *qh, uint32_t queuelen)
+Index: libnetfilter_queue-1.0.5/src/libnetfilter_queue.c
+===================================================================
+--- libnetfilter_queue-1.0.5.orig/src/libnetfilter_queue.c
++++ libnetfilter_queue-1.0.5/src/libnetfilter_queue.c
+@@ -774,12 +774,13 @@ int nfq_set_queue_maxlen(struct nfq_q_ha
  static int __set_verdict(struct nfq_q_handle *qh, uint32_t id,
  		uint32_t verdict, uint32_t mark, int set_mark,
  		uint32_t data_len, const unsigned char *data,
@@ -131,7 +139,7 @@ This patch is a combination of Netduma patches provided in NG-204909.
  			+NFA_LENGTH(sizeof(vh))];
  		struct nlmsghdr nmh;
  	} u;
-@@ -802,8 +803,10 @@ static int __set_verdict(struct nfq_q_handle *qh, uint32_t id,
+@@ -802,8 +803,10 @@ static int __set_verdict(struct nfq_q_ha
  	/* add verdict header */
  	nfnl_addattr_l(&u.nmh, sizeof(u), NFQA_VERDICT_HDR, &vh, sizeof(vh));
  
@@ -143,7 +151,7 @@ This patch is a combination of Netduma patches provided in NG-204909.
  
  	iov[0].iov_base = &u.nmh;
  	iov[0].iov_len = NLMSG_TAIL(&u.nmh) - (void *)&u.nmh;
-@@ -858,7 +861,7 @@ int nfq_set_verdict(struct nfq_q_handle *qh, uint32_t id,
+@@ -858,7 +861,7 @@ int nfq_set_verdict(struct nfq_q_handle
  		    const unsigned char *buf)
  {
  	return __set_verdict(qh, id, verdict, 0, 0, data_len, buf,
@@ -152,7 +160,7 @@ This patch is a combination of Netduma patches provided in NG-204909.
  }
  
  /**
-@@ -876,7 +879,26 @@ int nfq_set_verdict2(struct nfq_q_handle *qh, uint32_t id,
+@@ -876,7 +879,26 @@ int nfq_set_verdict2(struct nfq_q_handle
  		     uint32_t data_len, const unsigned char *buf)
  {
  	return __set_verdict(qh, id, verdict, htonl(mark), 1, data_len,
@@ -180,7 +188,7 @@ This patch is a combination of Netduma patches provided in NG-204909.
  }
  
  /**
-@@ -896,7 +918,7 @@ int nfq_set_verdict_batch(struct nfq_q_handle *qh, uint32_t id,
+@@ -896,7 +918,7 @@ int nfq_set_verdict_batch(struct nfq_q_h
  			  uint32_t verdict)
  {
  	return __set_verdict(qh, id, verdict, 0, 0, 0, NULL,
@@ -189,7 +197,7 @@ This patch is a combination of Netduma patches provided in NG-204909.
  }
  
  /**
-@@ -911,7 +933,7 @@ int nfq_set_verdict_batch2(struct nfq_q_handle *qh, uint32_t id,
+@@ -911,7 +933,7 @@ int nfq_set_verdict_batch2(struct nfq_q_
  			   uint32_t verdict, uint32_t mark)
  {
  	return __set_verdict(qh, id, verdict, htonl(mark), 1, 0,
@@ -198,7 +206,7 @@ This patch is a combination of Netduma patches provided in NG-204909.
  }
  
  /**
-@@ -934,7 +956,7 @@ int nfq_set_verdict_mark(struct nfq_q_handle *qh, uint32_t id,
+@@ -934,7 +956,7 @@ int nfq_set_verdict_mark(struct nfq_q_ha
  			 uint32_t data_len, const unsigned char *buf)
  {
  	return __set_verdict(qh, id, verdict, mark, 1, data_len, buf,
@@ -207,11 +215,10 @@ This patch is a combination of Netduma patches provided in NG-204909.
  }
  
  /**
-@@ -989,6 +1011,18 @@ uint32_t nfq_get_nfmark(struct nfq_data *nfad)
- 	return ntohl(nfnl_get_data(nfad->data, NFQA_MARK, uint32_t));
+@@ -990,6 +1012,18 @@ uint32_t nfq_get_nfmark(struct nfq_data
  }
  
-+/**
+ /**
 + * nfq_get_nfextramark - get the packet extra mark
 + * \param nfad Netlink packet data handle passed to callback function
 + *
@@ -223,6 +230,7 @@ This patch is a combination of Netduma patches provided in NG-204909.
 +	return ntohl(nfnl_get_data(nfad->data, NFQA_EXTRA_MARK, uint32_t));
 +}
 +
- /**
++/**
   * nfq_get_timestamp - get the packet timestamp
   * \param nfad Netlink packet data handle passed to callback function
+  * \param tv structure to fill with timestamp info

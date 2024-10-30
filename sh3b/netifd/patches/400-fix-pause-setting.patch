@@ -1,0 +1,23 @@
+ system-linux.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/system-linux.c b/system-linux.c
+index 21110c5..a05c4f1 100644
+--- a/system-linux.c
++++ b/system-linux.c
+@@ -2013,7 +2013,6 @@ system_set_ethtool_settings(struct device *dev, struct device_settings *s)
+ 	__s8 nwords;
+ 	__u32 *supported, *advertising;
+ 
+-	system_set_ethtool_pause(dev, s);
+ 
+ 	if (s->flags & DEV_OPT_EEE)
+ 		system_set_ethtool_eee_settings(dev, s);
+@@ -2075,6 +2074,7 @@ system_set_ethtool_settings(struct device *dev, struct device_settings *s)
+ 
+ 	ecmd.req.cmd = ETHTOOL_SLINKSETTINGS;
+ 	ioctl(sock_ioctl, SIOCETHTOOL, &ifr);
++	system_set_ethtool_pause(dev, s);
+ }
+ 
+ static void

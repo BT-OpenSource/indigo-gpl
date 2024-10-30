@@ -1,0 +1,65 @@
+--- a/networking/traceroute.c
++++ b/networking/traceroute.c
+@@ -410,6 +410,7 @@ struct globals {
+ # define G_ipv6 0
+ #endif
+ 	int packlen;                    /* total length of packet */
++	int minpacklen;                 /* minimum packet length */
+ 	int pmtu;                       /* Path MTU Discovery (RFC1191) */
+ 	int waittime;                   /* time to wait for response (in seconds) */
+ 	int first_ttl;
+@@ -424,6 +425,7 @@ struct globals {
+ #define outdata   (G.outdata  )
+ #define dest_lsa  (G.dest_lsa )
+ #define packlen   (G.packlen  )
++#define minpacklen (G.minpacklen)
+ #define pmtu      (G.pmtu     )
+ #define ident     (G.ident    )
+ #define port      (G.port     )
+@@ -894,6 +896,7 @@ traceroute_init(int op, char **argv)
+ 
+ 	INIT_G();
+ 	port = 33434;
++	packlen = 0;
+ 	waittime = 5;
+ 	G.first_ttl = 1;
+ 	G.nprobes = 3;
+@@ -921,11 +924,11 @@ traceroute_init(int op, char **argv)
+ 		G.first_ttl = xatou_range(first_ttl_str, 1, G.max_ttl);
+ 
+ 	/* Process destination and optional packet size */
+-	packlen = sizeof(struct ip)
++	minpacklen = sizeof(struct ip)
+ 			+ sizeof(struct udphdr)
+ 			+ sizeof(struct outdata_t);
+ 	if (op & OPT_USE_ICMP) {
+-		packlen = sizeof(struct ip)
++		minpacklen = sizeof(struct ip)
+ 			+ SIZEOF_ICMP_HDR
+ 			+ sizeof(struct outdata_t);
+ 		port = 0; /* on ICMP6 sockets, sendto(ipv6.nonzero_port) throws EINVAL! */
+@@ -941,11 +944,11 @@ traceroute_init(int op, char **argv)
+ //TODO: make sure af == AF_INET[6]? (FEATURE_UNIX_LOCAL=y allows "local:/PATH" to be translated to AF_UNIX)
+ 	if (af == AF_INET6) {
+ 		G_ipv6 = 1;
+-		packlen = sizeof(struct ip6_hdr)
++		minpacklen = sizeof(struct ip6_hdr)
+ 				+ sizeof(struct udphdr)
+ 				+ sizeof(struct outdata6_t);
+ 		if (op & OPT_USE_ICMP)
+-			packlen = sizeof(struct ip6_hdr)
++			minpacklen = sizeof(struct ip6_hdr)
+ 				+ SIZEOF_ICMP_HDR
+ 				+ sizeof(struct outdata6_t);
+ 	}
+@@ -958,7 +961,9 @@ traceroute_init(int op, char **argv)
+ 	G.to = xzalloc(dest_lsa->len);
+ #endif
+ 	if (argv[1])
+-		packlen = xatoul_range(argv[1], packlen, 32 * 1024);
++		packlen = xatoul_range(argv[1], 0, 32 * 1024);
++	if (packlen < minpacklen)
++		packlen = minpacklen;
+ 
+ 	if (af == AF_INET) {
+ 		xmove_fd(xsocket(AF_INET, SOCK_RAW, IPPROTO_ICMP), rcvsock);

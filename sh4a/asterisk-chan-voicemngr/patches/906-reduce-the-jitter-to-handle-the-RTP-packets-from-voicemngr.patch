@@ -1,0 +1,40 @@
+--- a/src/channels/chan_voicemngr.c
++++ b/src/channels/chan_voicemngr.c
+@@ -39,6 +39,8 @@
+ #include <semaphore.h>
+ #include <sys/types.h>
+ #include <sys/stat.h>  // mkfifo()
++#include <sched.h>
++#include <string.h>
+ 
+ #include "asterisk/lock.h"
+ #include "asterisk/channel.h"
+@@ -5333,9 +5335,26 @@ static int ubus_init(void) {
+ 
+ // pthread wrapper for lib picoevent dispatcher
+ static void *pe_base_run(void *unused) {
+-	int delay;
++	int delay, policy, priority_min, priority_max;
++	struct sched_param param = { .sched_priority = 0, };
++	pthread_t thread = pthread_self();
++	int tid = ast_get_tid();
++
++	// Change the thread schedule policy and priority
++	priority_min = sched_get_priority_min(SCHED_FIFO);
++	priority_max = sched_get_priority_max(SCHED_FIFO);
++	param.sched_priority = priority_max;
++	if (pthread_setschedparam(thread, SCHED_FIFO, &param) != 0) {
++		ast_log(LOG_ERROR, "pthread_setschedparam failed, %s\n", strerror(errno));
++	}
++	// Get the new schedule policy and priority
++	policy = SCHED_FIFO - 1;
++	param.sched_priority = priority_min - 1; // set as an invalid value intentionally
++	if (pthread_getschedparam(thread, &policy, &param) != 0) {
++		ast_log(LOG_ERROR, "pthread_getschedparam failed, %s\n", strerror(errno));
++	}
++	ast_verbose("thread entry is %s, tid=%d, new schedule policy=%d, priority=%d\n", __func__, tid, policy, param.sched_priority);
+ 
+-	ast_verbose("thread %d started\n", ast_get_tid());
+ 	for (delay = 0; delay < 5 && (!iflist || !cur_tech); delay++)
+ 		sleep(1);
+ 	pe_base_dispatch(base);

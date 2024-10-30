@@ -1,0 +1,33 @@
+From 64c45d1e4c58d32af43671002acfc73b228bde16 Mon Sep 17 00:00:00 2001
+From: Arulanbu Balusamy <quic_abalusam@quicinc.com>
+Date: Wed, 14 Feb 2024 15:31:32 +0530
+Subject: [PATCH] iw: Fix the null value updation on EHT MCS/NSS values.
+
+The MCS/NSS values are not updated properly with the respective
+bandwidth when the EHT-20 MHz is not applicable. So handle the
+address increment of the mcs_set array properly and resolving
+the Null value updation issue on the EHT bandwidths.
+
+Signed-off-by: Arulanbu Balusamy <quic_abalusam@quicinc.com>
+---
+ util.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/util.c b/util.c
+index e37de42..a9300e8 100644
+--- a/util.c
++++ b/util.c
+@@ -1564,9 +1564,9 @@ static void __print_eht_capa(int band,
+ 			printf("%s\t\tEHT bw=20 MHz, max NSS for MCS %s: Rx=%u, Tx=%u\n",
+ 			       pre, mcs[i],
+ 			       mcs_set[i] & 0xf, mcs_set[i] >> 4);
++		mcs_set += 4;
+ 	}
+ 
+-	mcs_set += 4;
+ 	if (he_phy_cap[0] & (BIT(2) << 8)) {
+ 		for (i = 0; i < 3; i++)
+ 			printf("%s\t\tEHT bw <= 80 MHz, max NSS for MCS %s: Rx=%u, Tx=%u\n",
+-- 
+2.34.1
+

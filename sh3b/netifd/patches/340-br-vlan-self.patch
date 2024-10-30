@@ -1,15 +1,17 @@
---- a/bridge.c
-+++ b/bridge.c
-@@ -233,7 +233,7 @@ bridge_set_local_vlan(struct bridge_stat
+Index: netifd-2023-09-19-7a58b995/bridge.c
+===================================================================
+--- netifd-2023-09-19-7a58b995.orig/bridge.c
++++ netifd-2023-09-19-7a58b995/bridge.c
+@@ -235,7 +235,7 @@ bridge_set_local_vlan(struct bridge_stat
  	if (!vlan->local && add)
  		return;
  
--	system_bridge_vlan(bst->dev.ifname, vlan->vid, add, BRVLAN_F_SELF);
-+	system_bridge_vlan(bst->dev.ifname, vlan->vid, add, vlan->local_flags | BRVLAN_F_SELF);
+-	system_bridge_vlan(bst->dev.ifname, vlan->vid, -1, add, BRVLAN_F_SELF);
++	system_bridge_vlan(bst->dev.ifname, vlan->vid, -1, add, vlan->local_flags | BRVLAN_F_SELF);
  }
  
  static void
-@@ -951,6 +951,7 @@ bridge_dump_vlan(struct blob_buf *b, str
+@@ -1024,6 +1024,7 @@ bridge_dump_vlan(struct blob_buf *b, str
  
  	blobmsg_add_u32(b, "id", vlan->vid);
  	blobmsg_add_u8(b, "local", vlan->local);
@@ -17,9 +19,11 @@
  
  	p = blobmsg_open_array(b, "ports");
  
---- a/device.h
-+++ b/device.h
-@@ -293,6 +293,7 @@ struct bridge_vlan {
+Index: netifd-2023-09-19-7a58b995/device.h
+===================================================================
+--- netifd-2023-09-19-7a58b995.orig/device.h
++++ netifd-2023-09-19-7a58b995/device.h
+@@ -315,6 +315,7 @@ struct bridge_vlan {
  
  	uint16_t vid;
  	bool local;
@@ -27,8 +31,10 @@
  	bool pending;
  };
  
---- a/config.c
-+++ b/config.c
+Index: netifd-2023-09-19-7a58b995/config.c
+===================================================================
+--- netifd-2023-09-19-7a58b995.orig/config.c
++++ netifd-2023-09-19-7a58b995/config.c
 @@ -312,6 +312,7 @@ config_parse_vlan(struct device *dev, st
  	enum {
  		BRVLAN_ATTR_VID,
@@ -52,7 +58,7 @@
 +	char *local_flags;
  	int name_len = 0;
  	int n_ports = 0;
- 	int rem;
+ 	size_t rem;
 @@ -371,6 +374,15 @@ config_parse_vlan(struct device *dev, st
  	if (tb[BRVLAN_ATTR_LOCAL])
  		vlan->local = blobmsg_get_bool(tb[BRVLAN_ATTR_LOCAL]);

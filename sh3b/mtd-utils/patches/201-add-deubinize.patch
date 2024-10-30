@@ -9,28 +9,32 @@ Subject: [PATCH] mtd-utils: add deubinize
  2 files changed, 476 insertions(+), 1 deletion(-)
  create mode 100644 ubi-utils/deubinize.c
 
-diff --git a/ubi-utils/Makemodule.am b/ubi-utils/Makemodule.am
-index 215eac2..1f6d098 100644
---- a/ubi-utils/Makemodule.am
-+++ b/ubi-utils/Makemodule.am
-@@ -37,8 +37,11 @@ ubirsvol_LDADD = libmtd.a libubi.a
+Index: mtd-utils-2.1.4/ubi-utils/Makemodule.am
+===================================================================
+--- mtd-utils-2.1.4.orig/ubi-utils/Makemodule.am
++++ mtd-utils-2.1.4/ubi-utils/Makemodule.am
+@@ -40,13 +40,16 @@ ubirsvol_LDADD = libmtd.a libubi.a
  ubiblock_SOURCES = ubi-utils/ubiblock.c
  ubiblock_LDADD = libmtd.a libubi.a
  
 +deubinize_SOURCES = ubi-utils/deubinize.c
 +deubinize_LDADD = libmtd.a libubi.a
 +
- UBI_BINS = \
+ if WITH_GETRANDOM
+ ubihealthd_SOURCES = ubi-utils/ubihealthd.c
+ ubihealthd_LDADD = libmtd.a libubi.a
+ endif
+ 
+ sbin_PROGRAMS += \
 -	ubiupdatevol ubimkvol ubirmvol ubicrc32 ubinfo ubiattach \
 +	ubiupdatevol ubimkvol ubirmvol ubicrc32 ubinfo ubiattach deubinize \
- 	ubidetach ubinize ubiformat ubirename mtdinfo ubirsvol ubiblock
+ 	ubidetach ubinize ubiformat ubirename mtdinfo ubirsvol ubiblock ubiscan
  
- UBI_MAN = \
-diff --git a/ubi-utils/deubinize.c b/ubi-utils/deubinize.c
-new file mode 100644
-index 0000000..6feef73
+ if WITH_GETRANDOM
+Index: mtd-utils-2.1.4/ubi-utils/deubinize.c
+===================================================================
 --- /dev/null
-+++ b/ubi-utils/deubinize.c
++++ mtd-utils-2.1.4/ubi-utils/deubinize.c
 @@ -0,0 +1,472 @@
 +/*
 + * Copyright (C) 2015 Inteno Broadband Technology AB
@@ -504,6 +508,3 @@ index 0000000..6feef73
 +	return ret;
 +}
 +
--- 
-2.7.4
-

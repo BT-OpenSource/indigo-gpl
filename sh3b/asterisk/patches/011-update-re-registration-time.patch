@@ -39,7 +39,7 @@
 @@ -1259,7 +1275,6 @@ static int handle_registration_response(
  	if (PJSIP_IS_STATUS_IN_CLASS(response->code, 200)) {
  		/* Check if this is in regards to registering or unregistering */
- 		if (response->expiration) {
+ 		if (exp_expiration && response->expiration) {
 -			int next_registration_round;
  
  			response->client_state->is494=0;

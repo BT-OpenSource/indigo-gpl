@@ -1,6 +1,8 @@
---- a/res/res_pjsip_outbound_registration.c
-+++ b/res/res_pjsip_outbound_registration.c
-@@ -926,37 +926,14 @@ static int sip_outbound_registration_is_
+Index: asterisk-20.3.0/res/res_pjsip_outbound_registration.c
+===================================================================
+--- asterisk-20.3.0.orig/res/res_pjsip_outbound_registration.c
++++ asterisk-20.3.0/res/res_pjsip_outbound_registration.c
+@@ -1371,37 +1371,14 @@ static int sip_outbound_registration_is_
  	}
  }
  
@@ -11,8 +13,8 @@
 -	int res = 0;
 -	struct ubus_context *ubusContext = NULL;
 +	/*libubus is not thread safe. When multiple threads of asterisk invoke ubus_send_event,
-+          there is a possibility that one of the threads will be stuck in sending ubus event.
-+          Use libindigo to send the ubus events, as it synchronizes the calls to send_ubus_event.*/
++	        there is a possibility that one of the threads will be stuck in sending ubus event.
++	        Use libindigo to send the ubus events, as it synchronizes the calls to send_ubus_event.*/
  
 -	ubusContext = ubus_connect(NULL);
 -	if(!ubusContext){
@@ -22,7 +24,7 @@
 -
 -	memset(&blob, 0, sizeof(blob));
 -	if(blob_buf_init(&blob, 0)) {
--		ubus_free(ubusContext);
+-		ast_ubus_free_context(ubusContext);
 -		return -1;
 -	}
 -
@@ -35,7 +37,7 @@
 -		res = -1;
 -	}
 -
--	ubus_free(ubusContext);
+-	ast_ubus_free_context(ubusContext);
 -	blob_buf_free(&blob);
 -
 -	return res;

@@ -1,0 +1,16 @@
+--- a/scripts/netifd-wireless.sh
++++ b/scripts/netifd-wireless.sh
+@@ -331,9 +331,11 @@
+ 		if [ -n "$_w_types" ]; then
+ 			json_get_var network_bridge bridge
+ 			json_get_var network_ifname bridge-ifname
+-			json_get_var multicast_to_unicast multicast_to_unicast
++			#json_get_var multicast_to_unicast multicast_to_unicast
+ 			json_select config
+-			_wireless_set_brsnoop_isolation "$multicast_to_unicast"
++			# Disable bridge snoop isolation. Apply isolation when it's set
++			# in wireless config. e.g.: wireless.guest_5G.isolate='1'
++			#_wireless_set_brsnoop_isolation "$multicast_to_unicast"
+ 			json_get_var _w_type mode
+ 			json_select ..
+ 			_w_types=" $_w_types "

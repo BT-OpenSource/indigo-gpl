@@ -1,0 +1,76 @@
+--- a/res/res_pjsip_pubsub.c
++++ b/res/res_pjsip_pubsub.c
+@@ -1332,18 +1332,11 @@ static void destroy_subscriptions(struct
+ 	destroy_subscription(root);
+ }
+ 
+-static struct ast_sip_subscription *allocate_subscription(const struct ast_sip_subscription_handler *handler,
+-		const char *resource, const char *display_name, struct sip_subscription_tree *tree)
++static struct ast_sip_subscription *allocate_subscription_custom(const struct ast_sip_subscription_handler *handler,
++               const char *resource, const char *display_name, struct sip_subscription_tree *tree,
++               pjsip_sip_uri *request_uri)
+ {
+ 	struct ast_sip_subscription *sub;
+-	pjsip_msg *msg;
+-	pjsip_sip_uri *request_uri;
+-
+-	msg = ast_sip_mod_data_get(tree->dlg->mod_data, pubsub_module.id, MOD_DATA_MSG);
+-	if (!msg) {
+-		ast_log(LOG_ERROR, "No dialog message saved for SIP subscription. Cannot allocate subscription for resource %s\n", resource);
+-		return NULL;
+-	}
+ 
+ 	sub = ast_calloc(1, sizeof(*sub) + strlen(resource) + 1);
+ 	if (!sub) {
+@@ -1366,7 +1359,6 @@ static struct ast_sip_subscription *allo
+ 	}
+ 
+ 	sub->uri = pjsip_sip_uri_create(tree->dlg->pool, PJ_FALSE);
+-	request_uri = pjsip_uri_get_uri(msg->line.req.uri);
+ 	pjsip_sip_uri_assign(tree->dlg->pool, sub->uri, request_uri);
+ 	pj_strdup2(tree->dlg->pool, &sub->uri->user, resource);
+ 
+@@ -1385,6 +1377,23 @@ static struct ast_sip_subscription *allo
+ 	return sub;
+ }
+ 
++static struct ast_sip_subscription *allocate_subscription(const struct ast_sip_subscription_handler *handler,
++               const char *resource, const char *display_name, struct sip_subscription_tree *tree)
++{
++       pjsip_sip_uri *request_uri;
++       pjsip_msg *msg;
++
++       msg = ast_sip_mod_data_get(tree->dlg->mod_data, pubsub_module.id, MOD_DATA_MSG);
++       if (!msg) {
++               ast_log(LOG_ERROR, "No dialog message saved for SIP subscription. Cannot allocate subscription for resource %s\n", resource);
++               return NULL;
++       }
++       request_uri = pjsip_uri_get_uri(msg->line.req.uri);
++
++       return allocate_subscription_custom(handler, resource, display_name,
++                       tree, request_uri);
++}
++
+ /*!
+  * \brief Create a tree of virtual subscriptions based on a resource tree node.
+  *
+@@ -1987,6 +1996,7 @@ struct ast_sip_subscription *ast_sip_cre
+ 	pjsip_tx_data *tdata;
+ 	pjsip_evsub *evsub;
+ 	struct sip_subscription_tree *sub_tree = NULL;
++       pjsip_sip_uri *request_uri;
+ 
+ 	sub_tree = allocate_subscription_tree(endpoint, NULL);
+ 	if (!sub_tree) {
+@@ -2013,9 +2023,10 @@ struct ast_sip_subscription *ast_sip_cre
+ 	pj_cstr(&event, handler->event_name);
+ 	pjsip_evsub_create_uac(dlg, &pubsub_cb, &event, 0, &sub_tree->evsub);
+ 	subscription_setup_dialog(sub_tree, dlg);
++	request_uri = pjsip_uri_get_uri(sub_tree->dlg->local.contact->uri);
+ 
+ 	/* Subscription needs to be allocated after dialog created */
+-	sub = allocate_subscription(handler, resource, NULL, sub_tree);
++	sub = allocate_subscription_custom(handler, resource, NULL, sub_tree, request_uri);
+ 	if (!sub) {
+ 		ao2_cleanup(sub_tree);
+ 		return NULL;

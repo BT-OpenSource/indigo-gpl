@@ -1,0 +1,60 @@
+diff --git a/broadcom/bcm_dsl_api.c b/broadcom/bcm_dsl_api.c
+index 90f57a3..589bf07 100644
+--- a/broadcom/bcm_dsl_api.c
++++ b/broadcom/bcm_dsl_api.c
+@@ -967,37 +967,37 @@ int dsl_get_channel_stats_interval(int chan_num, enum dsl_stats_type type, struc
+ 	 */
+ 	switch (type) {
+ 	case DSL_STATS_TOTAL:
+-		stats->xtur_fec_errors = pChanPerfData->perfTotal.adslChanTxFEC;
+-		stats->xtuc_fec_errors = pChanPerfData->perfTotal.adslChanCorrectedBlks;
+-		stats->xtur_crc_errors = pChanPerfData->perfTotal.adslChanTxCRC;
+-		stats->xtuc_crc_errors = pChanPerfData->perfTotal.adslChanUncorrectBlks;
++		stats->xtuc_fec_errors = pChanPerfData->perfTotal.adslChanTxFEC;
++		stats->xtur_fec_errors = pChanPerfData->perfTotal.adslChanCorrectedBlks;
++		stats->xtuc_crc_errors = pChanPerfData->perfTotal.adslChanTxCRC;
++		stats->xtur_crc_errors = pChanPerfData->perfTotal.adslChanUncorrectBlks;
+ 		break;
+ 	case DSL_STATS_SHOWTIME:
+-		stats->xtur_fec_errors = dsl_mib.adslStat.xmtStat.cntRSCor;
+-		stats->xtuc_fec_errors = dsl_mib.adslStat.rcvStat.cntRSCor;
++		stats->xtuc_fec_errors = dsl_mib.adslStat.xmtStat.cntRSCor;
++		stats->xtur_fec_errors = dsl_mib.adslStat.rcvStat.cntRSCor;
+ 		/*
+ 		 * HEC counters actually are not included in any periodical statistics. But driver source shows that
+ 		 * it is in the category of showtime. And it also complies to the test results by Telia Eesti in
+ 		 * ticket #1043.
+ 		 */
+-		stats->xtur_hec_errors = dsl_mib.atmStat2lp[0].xmtStat.cntHEC;
+-		stats->xtuc_hec_errors = dsl_mib.atmStat2lp[0].rcvStat.cntHEC;
+-		stats->xtur_crc_errors = dsl_mib.adslStat.xmtStat.cntSFErr;
+-		stats->xtuc_crc_errors = dsl_mib.adslStat.rcvStat.cntSFErr;
++		stats->xtuc_hec_errors = dsl_mib.atmStat2lp[0].xmtStat.cntHEC;
++		stats->xtur_hec_errors = dsl_mib.atmStat2lp[0].rcvStat.cntHEC;
++		stats->xtuc_crc_errors = dsl_mib.adslStat.xmtStat.cntSFErr;
++		stats->xtur_crc_errors = dsl_mib.adslStat.rcvStat.cntSFErr;
+ 		break;
+ 	case DSL_STATS_LASTSHOWTIME: // N/A
+ 		break;
+ 	case DSL_STATS_CURRENTDAY:
+-		stats->xtur_fec_errors = pChanPerfData->perfCurr1Day.adslChanTxFEC;
+-		stats->xtuc_fec_errors = pChanPerfData->perfCurr1Day.adslChanCorrectedBlks;
+-		stats->xtur_crc_errors = pChanPerfData->perfCurr1Day.adslChanTxCRC;
+-		stats->xtuc_crc_errors = pChanPerfData->perfCurr1Day.adslChanUncorrectBlks;
++		stats->xtuc_fec_errors = pChanPerfData->perfCurr1Day.adslChanTxFEC;
++		stats->xtur_fec_errors = pChanPerfData->perfCurr1Day.adslChanCorrectedBlks;
++		stats->xtuc_crc_errors = pChanPerfData->perfCurr1Day.adslChanTxCRC;
++		stats->xtur_crc_errors = pChanPerfData->perfCurr1Day.adslChanUncorrectBlks;
+ 		break;
+ 	case DSL_STATS_QUARTERHOUR:
+-		stats->xtur_fec_errors = pChanPerfData->perfCurr15Min.adslChanTxFEC;
+-		stats->xtuc_fec_errors = pChanPerfData->perfCurr15Min.adslChanCorrectedBlks;
+-		stats->xtur_crc_errors = pChanPerfData->perfCurr15Min.adslChanTxCRC;
+-		stats->xtuc_crc_errors = pChanPerfData->perfCurr15Min.adslChanUncorrectBlks;
++		stats->xtuc_fec_errors = pChanPerfData->perfCurr15Min.adslChanTxFEC;
++		stats->xtur_fec_errors = pChanPerfData->perfCurr15Min.adslChanCorrectedBlks;
++		stats->xtuc_crc_errors = pChanPerfData->perfCurr15Min.adslChanTxCRC;
++		stats->xtur_crc_errors = pChanPerfData->perfCurr15Min.adslChanUncorrectBlks;
+ 		break;
+ 	default:
+ 		LIBDSL_LOG(LOG_ERR, "Unknown interval type for DSL channel statistics, %d\n", type);

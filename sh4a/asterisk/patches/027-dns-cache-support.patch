@@ -1,0 +1,226 @@
+--- a/include/asterisk/res_pjsip_outbound_registration.h
++++ b/include/asterisk/res_pjsip_outbound_registration.h
+@@ -30,4 +30,29 @@
+  */
+ void pjsip_outbound_registration_shorten(unsigned int expires, const char *uri);
+ 
++/*! DNS cache function pointer typedefs */
++typedef void (*dns_cache_update_addr_t)(void);
++typedef void (*dns_cache_clear_t)(void);
++
++/*!
++ * \brief Set DNS cache control function pointers
++ *
++ * Allow the outbound registration module to control a DNS cache if one is being
++ * used. This is required to ensure the cache is only updated when allowed with
++ * regards to any existing registration.
++ *
++ * \param update_addr Function pointer to update the address to use for a given host
++ * \param clear_cache Function pointer to clear the cache to allow a new DNS query
++ */
++void pjsip_outbound_registration_set_dns_cache_control(dns_cache_update_addr_t update_addr,
++		dns_cache_clear_t clear_cache);
++
++/*!
++ * \brief Clear DNS cache control function pointers
++ *
++ * Clear any DNS cache function pointers previously set using
++ * pjsip_outbound_registration_set_dns_cache_control.
++ */
++void pjsip_outbound_registration_clear_dns_cache_control(void);
++
+ #endif /* _RES_PJSIP_OUTBOUND_REGISTRATION_H */
+
+--- a/res/res_pjsip_outbound_registration.c
++++ b/res/res_pjsip_outbound_registration.c
+@@ -433,6 +433,10 @@
+ /*! subscription id for network change events */
+ static struct stasis_subscription *network_change_sub;
+ 
++/*! DNS cache function pointers */
++dns_cache_update_addr_t update_dns_cache_addr = NULL;
++dns_cache_clear_t clear_dns_cache = NULL;
++
+ /*! \brief Free any endpoint security mechanisms that have been stored */
+ static void clear_endpoint_security_mechanisms(struct sip_outbound_registration_client_state *client_state);
+ 
+@@ -2840,6 +2844,23 @@
+ 	reregister_all();
+ }
+ 
++/* External API to set DNS cache control function pointers */
++void pjsip_outbound_registration_set_dns_cache_control(dns_cache_update_addr_t update_addr,
++	       	dns_cache_clear_t clear_cache)
++{
++	ast_debug(3, "Setting DNS cache control function pointers\n");
++	update_dns_cache_addr = update_addr;
++	clear_dns_cache = clear_cache;
++}
++
++/* External API to clear DNS cache control function pointers */
++void pjsip_outbound_registration_clear_dns_cache_control(void)
++{
++	ast_debug(3, "Clearing DNS cache control function pointers\n");
++	update_dns_cache_addr = NULL;
++	clear_dns_cache = NULL;
++}
++
+ static int unload_module(void)
+ {
+ 	int remaining;
+
+--- /dev/null
++++ b/res/res_pjsip.exports.in
+@@ -5,6 +5,7 @@
+ 		LINKER_SYMBOL_PREFIXast_copy_pj_str;
+ 		LINKER_SYMBOL_PREFIXast_copy_pj_str2;
+ 		LINKER_SYMBOL_PREFIXast_pjsip_rdata_get_endpoint;
++		LINKER_SYMBOL_PREFIXpjsip_resolver_*;
+ 	local:
+ 		*;
+ };
+
+--- /dev/null
++++ b/include/asterisk/pjsip_resolver.h
+@@ -0,0 +1,28 @@
++/* Copyright (c) 2021 BT plc. All rights reserved. */
++
++#ifndef _RES_PJSIP_RESOLVER_H
++#define _RES_PJSIP_RESOLVER_H
++
++/*! DNS cache function pointer typedefs */
++typedef int (*dns_cache_get_addr_t)(const char *host, pjsip_server_addresses *addresses);
++typedef int (*dns_cache_update_t)(const char *host, pjsip_server_addresses *addresses, int ttl);
++
++/*!
++ * \brief Set DNS cache function pointers
++ *
++ * Allow the pjsip resolver module to optionally use a DNS cache instead of always
++ * having to do a full DNS query.
++ *
++ * \param get_addr Function pointer to get address for a given host
++ * \param update_cache Function pointer to update cache with latest DNS query results
++ */
++void pjsip_resolver_set_dns_cache(dns_cache_get_addr_t get_addr, dns_cache_update_t update_cache);
++
++/*!
++ * \brief Clear DNS cache function pointers
++ *
++ * Clear any DNS cache function pointers previously set using pjsip_resolver_set_dns_cache.
++ */
++void pjsip_resolver_clear_dns_cache(void);
++
++#endif /* _RES_PJSIP_RESOLVER_H */
+
+--- a/res/res_pjsip/pjsip_resolver.c
++++ b/res/res_pjsip/pjsip_resolver.c
+@@ -32,9 +32,14 @@
+ #include "include/res_pjsip_private.h"
+ #include "asterisk/taskprocessor.h"
+ #include "asterisk/threadpool.h"
++#include "asterisk/pjsip_resolver.h"
+ 
+ #ifdef HAVE_PJSIP_EXTERNAL_RESOLVER
+ 
++/*! DNS cache function pointers */
++dns_cache_get_addr_t get_dns_cache_addr = NULL;
++dns_cache_update_t update_dns_cache = NULL;
++
+ /*! \brief Structure which contains transport+port information for an active query */
+ struct sip_target {
+ 	/*! \brief The transport to be used */
+@@ -60,6 +65,10 @@
+ 	pjsip_resolver_callback *callback;
+ 	/*! \brief User provided data */
+ 	void *token;
++	/*! \brief Hostname requested to resolve */
++	char host[NI_MAXHOST];
++	/*! \brief Minimum TTL for the queries resulting in viable server addresses */
++	int ttl;
+ };
+ 
+ /*! \brief Our own defined transports, reduces the size of sip_available_transports */
+@@ -204,6 +213,18 @@
+ 		}
+ 	}
+ 
++	if (update_dns_cache && get_dns_cache_addr && resolve->addresses.count != 0) {
++		ast_debug(2, "Updating DNS cache...\n");
++
++		if ((*update_dns_cache)(resolve->host, &resolve->addresses, resolve->ttl)) {
++			ast_debug(2, "Getting addr from DNS cache\n");
++
++			if (!(*get_dns_cache_addr)(resolve->host, &resolve->addresses)) {
++				ast_log(LOG_ERROR, "Failed to get addr from cache after updating!");
++			}
++		}
++	}
++
+ 	ast_debug(2, "[%p] Invoking user callback with '%d' addresses\n", resolve, resolve->addresses.count);
+ 	resolve->callback(resolve->addresses.count ? PJ_SUCCESS : PJLIB_UTIL_EDNSNOANSWERREC, resolve->token, &resolve->addresses);
+ 
+@@ -337,6 +358,12 @@
+ 						ast_dns_record_get_data_size(record));
+ 				}
+ 
++				int min_ttl = ast_dns_result_get_lowest_ttl(result);
++				if (min_ttl > 0 && (resolve->ttl == 0 || resolve->ttl > min_ttl)) {
++					ast_debug(2, "Updating DNS TTL for query set from %d to %d\n", resolve->ttl, min_ttl);
++					resolve->ttl = min_ttl;
++				}
++
+ 				address_count++;
+ 			} else if (ast_dns_record_get_rr_type(record) == T_SRV) {
+ 				if (have_naptr) {
+@@ -531,6 +558,19 @@
+ 		return;
+ 	}
+ 
++	if (get_dns_cache_addr) {
++		ast_debug(2, "Checking DNS cache...\n");
++		pjsip_server_addresses addresses = { .count = 0, };
++
++		if ((*get_dns_cache_addr)(host, &addresses)) {
++			ast_debug(2, "Addr found in DNS cache\n");
++
++			cb(PJ_SUCCESS, token, &addresses);
++			return;
++		}
++		ast_debug(2, "No addr found in DNS cache\n");
++	}
++
+ 	resolve = ao2_alloc_options(sizeof(*resolve), sip_resolve_destroy, AO2_ALLOC_OPT_LOCK_NOLOCK);
+ 	if (!resolve) {
+ 		cb(PJ_ENOMEM, token, NULL);
+@@ -539,6 +579,8 @@
+ 
+ 	resolve->callback = cb;
+ 	resolve->token = token;
++	strncpy(resolve->host, host, NI_MAXHOST);
++	resolve->ttl = 0;
+ 
+ 	if (AST_VECTOR_INIT(&resolve->resolving, 4)) {
+ 		ao2_ref(resolve, -1);
+@@ -668,6 +710,22 @@
+ 	}
+ }
+ 
++/* External API to set DNS cache function pointers */
++void pjsip_resolver_set_dns_cache(dns_cache_get_addr_t get_addr, dns_cache_update_t update_cache)
++{
++	ast_debug(3, "Setting DNS cache control function pointers\n");
++	get_dns_cache_addr = get_addr;
++	update_dns_cache = update_cache;
++}
++
++/* External API to clear DNS cache function pointers */
++void pjsip_resolver_clear_dns_cache(void)
++{
++	ast_debug(3, "Clearing DNS cache control function pointers\n");
++	get_dns_cache_addr = NULL;
++	update_dns_cache = NULL;
++}
++
+ /*! \brief External resolver implementation for PJSIP */
+ static pjsip_ext_resolver ext_resolver = {
+ 	.resolve = sip_resolve,

@@ -1,0 +1,25 @@
+From b973d61c095773780530cf0d6aaa9b089e384243 Mon Sep 17 00:00:00 2001
+From: Sukru Senli <sukru.senli@iopsys.eu>
+Date: Thu, 21 Nov 2019 13:48:50 +0100
+Subject: [PATCH 901/904] sed: fsync before closing the file.
+
+---
+ editors/sed.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/editors/sed.c b/editors/sed.c
+index cddb0c7..9b04b21 100644
+--- a/editors/sed.c
++++ b/editors/sed.c
+@@ -1605,6 +1605,8 @@ int sed_main(int argc UNUSED_PARAM, char **argv)
+ 			fchown(nonstdoutfd, statbuf.st_uid, statbuf.st_gid);
+ 
+ 			process_files();
++			fflush(G.nonstdout);
++			fsync(fileno(G.nonstdout));
+ 			fclose(G.nonstdout);
+ 			G.nonstdout = stdout;
+ 
+-- 
+2.7.4
+

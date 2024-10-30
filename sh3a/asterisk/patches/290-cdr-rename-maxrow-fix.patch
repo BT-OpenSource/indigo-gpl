@@ -1,0 +1,27 @@
+--- a/cdr/cdr_csv.c
++++ b/cdr/cdr_csv.c
+@@ -147,8 +147,12 @@ static int load_config(int reload)
+ 		} else if (!strcasecmp(v->name, "maxrow")) {
+ 			maxrow = atoi(v->value);
+ 		} else if (!strcasecmp(v->name, "prefdir")) {
++			ast_mutex_lock(&f_lock);
+ 			snprintf(file_csv_master, sizeof(file_csv_master),
+ 				"%s/%s/%s", v->value, CSV_LOG_DIR, CSV_MASTER);
++			snprintf(file_csv_temp, sizeof(file_csv_temp),
++				"%s/%s/%s", v->value, CSV_LOG_DIR, CSV_TEMP);
++			ast_mutex_unlock(&f_lock);
+ 		}
+ 
+ 	}
+@@ -393,7 +397,10 @@ static int writefile(char *s, char *file
+ 		fflush(ft);
+ 		fclose(ft);
+ 		remove(file_path); /* rm the original file and rename the temp file to it */
+-		rename(file_csv_temp, file_path);
++		if (rename(file_csv_temp, file_path)) {
++			ast_log(LOG_ERROR, "Unable to rename %s to %s : %s\n", file_csv_temp, file_path, strerror(errno));
++			return -1;
++		}
+ 	} else {
+ 		if (!(f = fopen(file_path, "a"))) {
+ 			ast_log(LOG_ERROR, "Unable to open file %s : %s\n", file_path, strerror(errno));

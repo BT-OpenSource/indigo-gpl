@@ -1,0 +1,41 @@
+--- a/cryptutil.c
++++ b/cryptutil.c
+@@ -101,7 +101,7 @@ int LIBEASY_API PLATFORM_GENERATE_DH_KEY_PAIR(uint8_t **priv, size_t *privlen,
+ 	ret = 0;
+ err:
+ 	BN_clear_free(bn);
+-	//EVP_PKEY_free(pkey);
++	EVP_PKEY_free(pkey);
+ 	EVP_PKEY_CTX_free(ctx);
+ 	return ret;
+ }
+@@ -112,7 +112,7 @@ int LIBEASY_API PLATFORM_COMPUTE_DH_SHARED_SECRET(uint8_t **shkey, size_t *shkey
+ 				      uint8_t *local_pub, size_t local_publen)
+ {
+ 	EVP_PKEY *pkey = NULL, *peerkey = NULL;
+-	EVP_PKEY_CTX *ctx, *fctx;
++	EVP_PKEY_CTX *ctx = NULL, *fctx = NULL;
+ 	OSSL_PARAM *params = NULL;
+ 	OSSL_PARAM_BLD *pbld;
+ 	BIGNUM *pbn, *xbn;
+@@ -136,6 +136,7 @@ int LIBEASY_API PLATFORM_COMPUTE_DH_SHARED_SECRET(uint8_t **shkey, size_t *shkey
+ 	OSSL_PARAM_BLD_push_BN(pbld, "priv", pbn);
+ 	OSSL_PARAM_BLD_push_BN(pbld, "pub", xbn);
+ 	params = OSSL_PARAM_BLD_to_param(pbld);
++	OSSL_PARAM_BLD_free(pbld);
+ 
+ 	fctx = EVP_PKEY_CTX_new_from_name(NULL, "DH", NULL);
+ 	if (!fctx)
+@@ -192,6 +193,12 @@ int LIBEASY_API PLATFORM_COMPUTE_DH_SHARED_SECRET(uint8_t **shkey, size_t *shkey
+ err:
+ 	BN_clear_free(pbn);
+ 	BN_clear_free(xbn);
++	EVP_PKEY_CTX_free(ctx);
++	EVP_PKEY_CTX_free(fctx);
++	EVP_PKEY_free(pkey);
++	EVP_PKEY_free(peerkey);
++	free(params);
++
+ 	return ret;
+ }
+ 

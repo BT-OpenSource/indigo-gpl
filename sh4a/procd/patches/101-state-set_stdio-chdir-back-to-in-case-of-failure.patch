@@ -1,0 +1,48 @@
+From 2fcc789e9aff2a81d021c88b5eebd8e3361ed967 Mon Sep 17 00:00:00 2001
+From: Andreas Gnau <andreas.gnau@iopsys.eu>
+Date: Tue, 5 Dec 2023 18:51:46 +0100
+Subject: [PATCH procd] state: set_stdio: chdir back to / in case of failure
+
+set_stdio chdirs to /dev/ to facilitate easy freopen of the console
+device name given by the tty parameter. Make sure to chdir back to / in
+all cases, even in the error path. This keeps the function free from
+unintended side effects.
+
+Before this commit, in case of an error, the working directory would
+remain /dev/ which would break sysupgrade because the rest of the code
+would rely on the current working directory to be unchanged, which is
+not an unreasonable expectation to make.
+
+Fixing this fixes an issue where sysupgrade would fail, when
+/dev/console does not exist or cannot be opened, which can happen for
+example when setting console= on kernel cmdline.
+
+Closes: https://github.com/openwrt/openwrt/issues/6005
+Fixes: 91da63d3d3fd ("properly handle return codes")
+Signed-off-by: Andreas Gnau <andreas.gnau@iopsys.eu>
+---
+ state.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/state.c b/state.c
+index fb81248fd7e7..30e3569c8af9 100644
+--- a/state.c
++++ b/state.c
+@@ -48,11 +48,12 @@ static void set_stdio(const char* tty)
+ 	if (chdir("/dev") ||
+ 	    !freopen(tty, "r", stdin) ||
+ 	    !freopen(tty, "w", stdout) ||
+-	    !freopen(tty, "w", stderr) ||
+-	    chdir("/"))
++	    !freopen(tty, "w", stderr))
+ 		ERROR("failed to set stdio: %m\n");
+ 	else
+ 		fcntl(STDERR_FILENO, F_SETFL, fcntl(STDERR_FILENO, F_GETFL) | O_NONBLOCK);
++	if (chdir("/"))
++		ERROR("failed to change dir to /: %m\n");
+ }
+ 
+ static void set_console(void)
+-- 
+2.43.0
+

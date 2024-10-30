@@ -1,0 +1,54 @@
+--- a/modules/mac80211/mac80211.c
++++ b/modules/mac80211/mac80211.c
+@@ -153,7 +153,7 @@
+ /* Radio callbacks */
+ static int radio_info_band(const char *name, enum wifi_band band, struct wifi_radio *radio)
+ {
+-	char netdev[16];
++	uint8_t oper_std, tmp_oper_std;
+ 	int ret;
+ 
+ 	libwifi_dbg("[%s, %s] %s called\n", name, wifi_band_to_str(band), __func__);
+@@ -169,26 +169,26 @@
+ 	if (ret)
+ 		return ret;
+ 
+-	ret = nlwifi_phy_to_netdev_with_type_and_band(name, netdev, sizeof(netdev), NLWIFI_MODE_AP, band);
+-	if (ret == 0) {
+-		ret = radio_get_iface_extch(netdev, radio);
+-		ret |= hostapd_cli_get_oper_stds(netdev, &radio->oper_std);
+-		correct_oper_std_by_band(band, &radio->oper_std);
++	for (uint8_t i = 0; i < radio->num_iface; ++i) {
++		tmp_oper_std = 0;
+ 
+-		return ret;
+-	}
++		if (radio->iface[i].mode & NLWIFI_MODE_AP) {
++			ret |= radio_get_iface_extch(radio->iface[i].name, radio);
++			ret |= hostapd_cli_get_oper_stds(radio->iface[i].name, &tmp_oper_std);
++			correct_oper_std_by_band(band, &tmp_oper_std);
++		}
++
++		if (radio->iface[i].mode & NLWIFI_MODE_STA) {
++			ret |= radio_get_iface_extch(radio->iface[i].name, radio);
++			ret |= supplicant_cli_get_oper_std(radio->iface[i].name, &tmp_oper_std);
++			correct_oper_std_by_band(band, &tmp_oper_std);
++		}
+ 
+-	ret = nlwifi_phy_to_netdev_with_type_and_band(name, netdev, sizeof(netdev), NLWIFI_MODE_STA, band);
+-	if (ret == 0) {
+-		ret = radio_get_iface_extch(netdev, radio);
+-		ret |= supplicant_cli_get_oper_std(netdev, &radio->oper_std);
+-		correct_oper_std_by_band(band, &radio->oper_std);
+-
+-		return ret;
++		oper_std |= tmp_oper_std;
+ 	}
+ 
+-	radio->oper_std = radio->supp_std;
+-	return 0;
++	radio->oper_std = (oper_std) ? oper_std : radio->supp_std;
++	return ret;
+ }
+ 
+ static int radio_info(const char *name, struct wifi_radio *radio)
