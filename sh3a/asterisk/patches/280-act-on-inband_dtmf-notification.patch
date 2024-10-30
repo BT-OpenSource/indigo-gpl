@@ -1,0 +1,61 @@
+diff --git a/apps/app_dial.c b/apps/app_dial.c
+index 8a3c70e..cd97379 100644
+--- a/apps/app_dial.c
++++ b/apps/app_dial.c
+@@ -2805,6 +2805,13 @@ static int dial_exec_full(struct ast_channel *chan, const char *data, struct ast
+ 
+ 		ast_party_redirecting_copy(ast_channel_redirecting(tc), ast_channel_redirecting(chan));
+ 
++		// replicating INBAND_DTMF variable from TELCHAN to PJSIP
++		const char *temp_var = pbx_builtin_getvar_helper(chan, "INBAND_DTMF");
++		ast_debug(1, "variable INBAND_DTMF=%s", temp_var);
++		if (temp_var != NULL) {
++			pbx_builtin_setvar_helper(tc, "INBAND_DTMF", temp_var);
++		}
++
+ 		ast_channel_dialed(tc)->transit_network_select = ast_channel_dialed(chan)->transit_network_select;
+ 
+ 		ast_channel_req_accountcodes(tc, chan, AST_CHANNEL_REQUESTOR_BRIDGE_PEER);
+diff --git a/main/rtp_engine.c b/main/rtp_engine.c
+index 23835f7..4bb707b 100644
+--- a/main/rtp_engine.c
++++ b/main/rtp_engine.c
+@@ -2037,7 +2037,6 @@ unsigned int ast_rtp_lookup_sample_rate2(int asterisk_format,
+ {
+ 	unsigned int i;
+ 	unsigned int res = 0;
+-
+ 	ast_rwlock_rdlock(&mime_types_lock);
+ 	for (i = 0; i < mime_types_len; ++i) {
+ 		if (ast_rtp_mime_types[i].payload_type.asterisk_format && asterisk_format && format &&
+diff --git a/res/res_pjsip_sdp_rtp.c b/res/res_pjsip_sdp_rtp.c
+index 7bd7751..43fcb05 100644
+--- a/res/res_pjsip_sdp_rtp.c
++++ b/res/res_pjsip_sdp_rtp.c
+@@ -54,6 +54,7 @@
+ #include "asterisk/stream.h"
+ #include "asterisk/logger_category.h"
+ #include "asterisk/format_cache.h"
++#include "asterisk/pbx.h"
+ 
+ #include "asterisk/res_pjsip.h"
+ #include "asterisk/res_pjsip_session.h"
+@@ -1992,6 +1993,18 @@ static int create_outgoing_sdp_stream(struct ast_sip_session *session, struct as
+ 				continue;
+ 			}
+ 
++			if (rtp_code == 101) {
++				struct ast_channel *chan = session->channel;
++
++				const char *temp_var = pbx_builtin_getvar_helper(chan, "INBAND_DTMF");
++				if (temp_var != NULL) {
++					ast_debug(1, "skipping rtp_code = 101 (INBAND_DTMF set)");
++					continue;
++				} else {
++					ast_debug(5, "leaving rtp_code intact");
++				}
++			}
++
+ 			if ((attr = generate_rtpmap_attr(session, media, pool, rtp_code, 0, NULL, index))) {
+ 				media->attr[media->attr_count++] = attr;
+ 			}

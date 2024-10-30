@@ -1,0 +1,11 @@
+--- a/src/channels/chan_voicemngr.c
++++ b/src/channels/chan_voicemngr.c
+@@ -3231,6 +3231,8 @@
+ 		 || sub->channel_state == DIALING
+ 		 || (owner && !ast_strlen_zero(ast_channel_codec_get(owner)) && strcmp(chan_voicemngr_get_codec_string(payload_type),ast_channel_codec_get(owner)))){
+ 			drop_frame=1;
++			// HFS-2296: now that we're dropping frames allow the codec to be renegotiated to see if we can get audio back
++			sub->updated_codec=0;
+ 		} else {
+ 			struct ast_format *format = map_rtptype_to_format(payload_type);
+ 			if (format) {

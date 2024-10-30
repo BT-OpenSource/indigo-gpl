@@ -1,0 +1,64 @@
+Index: libnetfilter_queue-1.0.5/src/nlmsg.c
+===================================================================
+--- libnetfilter_queue-1.0.5.orig/src/nlmsg.c
++++ libnetfilter_queue-1.0.5/src/nlmsg.c
+@@ -93,6 +93,15 @@ void nfq_nlmsg_verdict_put_mark(struct n
+ 	mnl_attr_put_u32(nlh, NFQA_MARK, htonl(mark));
+ }
+ 
++/**
++ * Like nfq_nlmsg_verdict_put_mark but for extra-mark.
++ */
++EXPORT_SYMBOL
++void nfq_nlmsg_verdict_put_extramark(struct nlmsghdr *nlh, uint32_t mark)
++{
++	mnl_attr_put_u32(nlh, NFQA_EXTRA_MARK, htonl(mark));
++}
++
+ EXPORT_SYMBOL
+ /**
+  * nfq_nlmsg_verdict_put_pkt - Put replacement packet content into a netlink
+@@ -219,6 +228,7 @@ static int nfq_pkt_parse_attr_cb(const s
+ 
+ 	switch(type) {
+ 	case NFQA_MARK:
++	case NFQA_EXTRA_MARK:
+ 	case NFQA_IFINDEX_INDEV:
+ 	case NFQA_IFINDEX_OUTDEV:
+ 	case NFQA_IFINDEX_PHYSINDEV:
+@@ -255,6 +265,7 @@ static int nfq_pkt_parse_attr_cb(const s
+ 	case NFQA_EXP:
+ 		break;
+ 	}
++
+ 	tb[type] = attr;
+ 	return MNL_CB_OK;
+ }
+Index: libnetfilter_queue-1.0.5/include/libnetfilter_queue/libnetfilter_queue.h
+===================================================================
+--- libnetfilter_queue-1.0.5.orig/include/libnetfilter_queue/libnetfilter_queue.h
++++ libnetfilter_queue-1.0.5/include/libnetfilter_queue/libnetfilter_queue.h
+@@ -156,6 +156,7 @@ void nfq_nlmsg_cfg_put_qmaxlen(struct nl
+ 
+ void nfq_nlmsg_verdict_put(struct nlmsghdr *nlh, int id, int verdict);
+ void nfq_nlmsg_verdict_put_mark(struct nlmsghdr *nlh, uint32_t mark);
++void nfq_nlmsg_verdict_put_extramark(struct nlmsghdr *nlh, uint32_t mark);
+ void nfq_nlmsg_verdict_put_pkt(struct nlmsghdr *nlh, const void *pkt, uint32_t pktlen);
+ 
+ int nfq_nlmsg_parse(const struct nlmsghdr *nlh, struct nlattr **attr);
+Index: libnetfilter_queue-1.0.5/include/linux/netfilter/nfnetlink_queue.h
+===================================================================
+--- libnetfilter_queue-1.0.5.orig/include/linux/netfilter/nfnetlink_queue.h
++++ libnetfilter_queue-1.0.5/include/linux/netfilter/nfnetlink_queue.h
+@@ -49,7 +49,10 @@ enum nfqnl_attr_type {
+ 	NFQA_EXP,			/* nf_conntrack_netlink.h */
+ 	NFQA_UID,			/* __u32 sk uid */
+ 	NFQA_GID,			/* __u32 sk gid */
+-	NFQA_SECCTX,
++	NFQA_SECCTX,                    /* security context string */
++	NFQA_VLAN,                      /* nested attribute: packet vlan info */
++	NFQA_L2HDR,                     /* full L2 header */
++	NFQA_EXTRA_MARK,                /* nd extra mark */
+ 
+ 	__NFQA_MAX
+ };

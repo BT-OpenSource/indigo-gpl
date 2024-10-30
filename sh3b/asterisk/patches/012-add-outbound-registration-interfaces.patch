@@ -176,7 +176,7 @@
  		return NULL;
  	}
  
--	sub = allocate_subscription(handler, resource, sub_tree);
+-	sub = allocate_subscription(handler, resource, NULL, sub_tree);
 -	if (!sub) {
 -		ao2_cleanup(sub_tree);
 -		return NULL;
@@ -190,7 +190,7 @@
  	subscription_setup_dialog(sub_tree, dlg);
  
 +	/* Subscription needs to be allocated after dialog created */
-+	sub = allocate_subscription(handler, resource, sub_tree);
++	sub = allocate_subscription(handler, resource, NULL, sub_tree);
 +	if (!sub) {
 +		ao2_cleanup(sub_tree);
 +		return NULL;

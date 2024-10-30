@@ -1,0 +1,32 @@
+diff --git a/device.c b/device.c
+index d69be9c..2798555 100644
+--- a/device.c
++++ b/device.c
+@@ -696,6 +696,18 @@ device_find(const char *name)
+ 	return avl_find_element(&devices, name, dev, avl);
+ }
+ 
++static bool
++device_is_lan_port(const char *name)
++{
++	int i;
++	int n;
++
++	if (sscanf(name, "eth0.%d %n", &i, &n) == 1 && !name[n])
++		return true;
++
++	return false;
++}
++
+ struct device *
+ __device_get(const char *name, int create, bool check_vlan)
+ {
+@@ -703,7 +715,7 @@ __device_get(const char *name, int create, bool check_vlan)
+ 
+ 	dev = avl_find_element(&devices, name, dev, avl);
+ 
+-	if (!dev && check_vlan && strchr(name, '.'))
++	if (!dev && check_vlan && !device_is_lan_port(name) && strchr(name, '.'))
+ 		return get_vlan_device_chain(name, create);
+ 
+ 	if (name[0] == '@')

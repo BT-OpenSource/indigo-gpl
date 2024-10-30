@@ -1,0 +1,166 @@
+--- a/src/channels/chan_voicemngr.c
++++ b/src/channels/chan_voicemngr.c
+@@ -185,6 +185,9 @@ static int r4hanguptimeout = DEFAULT_R4_HANGUP_TIMEOUT;
+ /* Automatic call on hold hangup */
+ static int onholdhanguptimeout = DEFAULT_ONHOLD_HANGUP_TIMEOUT;
+ 
++/* K-break duration in ms */
++static int k_break_timeout = 120;
++
+ /* Max call count per extension */
+ #define DEFAULT_MAX_SESSION_PER_EXTENSION 2
+ static int max_sessions_per_extension = DEFAULT_MAX_SESSION_PER_EXTENSION;
+@@ -695,7 +698,8 @@ static void endpt_signal(int line, char *signal, char *state, char *data) {
+ 			return;
+ 		}
+ 
+-		ast_verbose("thread %d: ubus call endpt signal\n", ast_get_tid());
++		ast_debug(3, "thread %d invoking ubus call endpt signal {line:%d,signal:%s,state:%s,data:%s}\n", ast_get_tid(),
++			line, signal, state, data ? data : "");
+ 		res = ubus_invoke_async(get_shared_context(__FUNCTION__), endpt_id, "signal", bb.head, req);
+ 
+ 		if(res != UBUS_STATUS_OK) {
+@@ -1554,8 +1558,9 @@ static int chan_voicemngr_hangup(struct ast_channel *ast)
+ 		ast_debug(2, "There is a forgotten onhold call, not releasing channel\n");
+ 		endpt_signal(sub->parent->line_id, "ringback", "off", NULL);
+ 	} else if (sub->channel_state == RINGING || sub->onhold_hangup_timer_id != -1) {
+-		//Stop ringing if other end hungup before we answered
+-                channel_settings *s = &channel_config[p->line_id];
++		// Stop ringing if other end hungs up before we answered
++		channel_settings *s = &channel_config[p->line_id];
++
+ 		if (!s->calleridenable) {
+ 			p->tech->stop_ringing(p);
+ 		} else {
+@@ -1607,8 +1612,8 @@ static int chan_voicemngr_hangup(struct ast_channel *ast)
+ 	 * isn't called again when going on-hook
+ 	 */
+ 	if (p->dialtone != DIALTONE_HOWLER && sub->channel_state != ONHOOK) {
+-		/*In case the call ends before connecting ,move the party to ONHOOK state Since its already on ONHOOK ,
+-		we never get on ONHOOK event again*/
++		/* In case the call ends before connecting, move the party to ONHOOK state since it's already ONHOOK.
++		 * We never get on ONHOOK event again */
+ 		if (sub->channel_state == RINGING || sub->channel_state == ONHOLD)
+ 			sub->channel_state = ONHOOK;
+ 		else
+@@ -1649,8 +1654,9 @@ static int chan_voicemngr_hangup(struct ast_channel *ast)
+ 
+ 	/* Check for channel state before dial tone timeout */
+ 	if(sub->channel_state == CALLENDED && sub_peer->channel_state != INCALL) {
+-		/* If we hangup but not playing howler, start playing timeout tones */
++		/* If we hang up but not playing howler, start playing timeout tones */
+ 		p->dialtone = DIALTONE_ON;
++		ast_debug(3, "Start call clearing procedures directly by calling handle_dialtone_timeout()\n");
+ 		handle_dialtone_timeout(p);
+ 	}
+ 
+@@ -2009,7 +2015,8 @@ struct chan_voicemngr_subchannel *chan_voicemngr_subchannel_get_peer(const struc
+ /* Tell endpoint to play country specific dialtone. */
+ static int chan_voicemngr_signal_dialtone(struct chan_voicemngr_pvt *p) {
+ 
+-	ast_verbose("Setting dialtone to %s\n", dialtone_map[p->dialtone].str);	
++	ast_debug(3, "Setting dialtone to %s\n", dialtone_map[p->dialtone].str);
++
+ 	switch (p->dialtone) {
+ 		case DIALTONE_OFF:
+ 		case DIALTONE_MWI_OFF:
+@@ -2027,8 +2034,10 @@ static int chan_voicemngr_signal_dialtone(struct chan_voicemngr_pvt *p) {
+ 		case DIALTONE_UNOBTAINABLE:
+ 			endpt_signal(p->line_id, "unobtainable", "on", NULL);
+ 			break;
++		case DIALTONE_K_BREAK:
++			endpt_signal(p->line_id, "k-break", "on", NULL);
++			break;
+ 		case DIALTONE_HOWLER:
+-			ast_debug(9, "Trigger howler tone from Asterisk\n");
+ 			chan_voicemngr_signal_howler(p);
+ 			break;
+ 		default:
+@@ -2046,6 +2055,8 @@ static void chan_voicemngr_signal_howler(struct chan_voicemngr_pvt *p) {
+ 		return;
+ 	}
+ 
++	ast_debug(3, "Trigger howler tone from Asterisk\n");
++
+ 	/* Start the pbx */
+ 	if (!sub->connection_init) {
+ 		sub->connection_id = ast_atomic_fetchadd_int((int *)&current_connection_id, +1);
+@@ -2536,33 +2547,48 @@ static int handle_autodial_timeout(const void *data)
+  */
+ static int handle_dialtone_timeout(const void *data)
+ {
+-	struct chan_voicemngr_pvt *p = (struct chan_voicemngr_pvt *) data;
++	struct chan_voicemngr_pvt *p = (struct chan_voicemngr_pvt *)data;
+ 
+ 	pvt_lock(p, "dialtone timeout");
+ 	strncpy(p->extensionCallStatus, "Disconnected", CALL_STATUS_MAX_LEN);
+-	//ast_mutex_lock(&p->lock);
+ 	p->dialtone_timeout_timer_id = -1;
+ 
+ 	struct chan_voicemngr_subchannel *sub = chan_voicemngr_get_active_subchannel(p);
+ 
+ 	ast_debug(9, "Dialtone timeout, sub->channel_state: %s\n", state2str(sub->channel_state));
+ 
++	/*
++	 * Call clearing tone sequence
++	 *
++	 * K-break(k_break_timeout) -> Unobtainable tone(offhook_nu_timeoutmsec) -> Silence(offhook_silence_timeoutmsec) -> Howler(180s) -> Silence
++	 *
++	 * The K-break signal actually lasts 100ms. Unobtainable tone is played a short moment after K-break is finished to make sure K-break
++	 * has been stopped gracefully by the DSP.
++	 */
+ 	if (sub && (sub->channel_state == OFFHOOK || sub->channel_state == AWAITONHOOK || sub->channel_state == CALLENDED)) {
+ 		/* Enter state where nothing else other than ONHOOK is accepted and play series of tones */
+ 		sub->channel_state = AWAITONHOOK;
+ 		channel_settings *s = &channel_config[p->line_id];
+ 
+ 		switch (p->dialtone) {
++			// Include all 4 dial tones available for asterisk.set1.mwi_dialtone_state
+ 			case DIALTONE_ON:
+ 			case DIALTONE_SPECIAL_CONDITION:
+ 			case DIALTONE_CONGESTION:
+ 			case DIALTONE_MWI_OFF:
+-				// Include all 4 dial tones available for asterisk.set1.mwi_dialtone_state
++				p->dialtone = DIALTONE_K_BREAK;
++				ast_debug(9, "Scheduling dialtone timeout in %dms for %s\n", k_break_timeout, dialtone_map[p->dialtone].str);
++				p->dialtone_timeout_timer_id = ast_sched_add(sched, k_break_timeout, handle_dialtone_timeout, p);
++				break;
++
++			case DIALTONE_K_BREAK:
+ 				p->dialtone = DIALTONE_UNOBTAINABLE;
++				ast_debug(9, "Scheduling dialtone timeout in %dms for %s\n", s->offhook_nu_timeoutmsec, dialtone_map[p->dialtone].str);
+ 				p->dialtone_timeout_timer_id = ast_sched_add(sched, s->offhook_nu_timeoutmsec, handle_dialtone_timeout, p);
+ 				break;
+ 			case DIALTONE_UNOBTAINABLE:
+ 				p->dialtone = DIALTONE_OFF;
++				ast_debug(9, "Scheduling dialtone timeout in %dms for %s\n", s->offhook_silence_timeoutmsec, dialtone_map[p->dialtone].str);
+ 				p->dialtone_timeout_timer_id = ast_sched_add(sched, s->offhook_silence_timeoutmsec, handle_dialtone_timeout, p);
+ 				break;
+ 			case DIALTONE_OFF:
+@@ -3651,7 +3677,7 @@ static void chan_voicemngr_process_event(struct endpt_event *ev)
+ 							p->autodial_timer_id = ast_sched_add(sched, s->autodial_timeoutmsec, handle_autodial_timeout, p);
+ 						} else {
+ 							/* No autodial, schedule dialtone timeout */
+-							ast_verbose("Scheduling dialtone timeout in %dms\n", s->dialtone_timeoutmsec);
++							ast_debug(3, "Scheduling dialtone timeout in %dms for %s\n", s->dialtone_timeoutmsec, dialtone_map[p->dialtone].str);
+ 							p->dialtone_timeout_timer_id = ast_sched_add(sched, s->dialtone_timeoutmsec, handle_dialtone_timeout, p);
+ 						}
+ 					} else {
+--- a/src/channels/chan_voicemngr.h
++++ b/src/channels/chan_voicemngr.h
+@@ -115,6 +115,7 @@ typedef enum dialtone_state {
+ 	DIALTONE_HOWLER,
+ 	DIALTONE_UNKNOWN,
+ 	DIALTONE_MWI_OFF,
++	DIALTONE_K_BREAK,
+ 	DIALTONE_LAST,
+ } dialtone_state;
+ 
+@@ -265,6 +266,7 @@ static const DIALTONE_MAP dialtone_map[] =
+ 	{DIALTONE_HOWLER, "howler"},
+ 	{DIALTONE_UNKNOWN, "unknown"},
+ 	{DIALTONE_MWI_OFF, "mwi_off"},
++	{DIALTONE_K_BREAK, "k-break"},
+ 	{DIALTONE_LAST, "-"},
+ };
+ 

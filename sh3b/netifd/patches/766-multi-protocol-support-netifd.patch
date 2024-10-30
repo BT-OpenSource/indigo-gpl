@@ -1,17 +1,9 @@
 diff --git a/config.c b/config.c
-index 9bbda39..2bc66f7 100644
+index d4a6516..9b4f4a5 100644
 --- a/config.c
 +++ b/config.c
-@@ -478,6 +478,7 @@ config_init_interfaces(void)
- 		if (!strcmp(s->type, "alias"))
- 			config_parse_interface(s, true);
- 	}
-+	interface_add_wan_dev_user();
- }
- 
- static void
-@@ -685,6 +686,128 @@ config_init_wireless(void)
- 	}
+@@ -689,6 +689,117 @@ config_init_wireless(void)
+ 		vlist_flush(&wdev->interfaces);
  }
  
 +static void config_interface_redo_config(struct interface *iface, const char *proto_name)
@@ -36,7 +28,7 @@ index 9bbda39..2bc66f7 100644
 +		}
 +	}
 +
-+	blob_buf_init(&b, 0); 
++	blob_buf_init(&b, 0);
 +
 +	proto_attach_interface(iface, proto_name);
 +	uci_to_blob(&b, s, &interface_attr_list);
@@ -68,178 +60,105 @@ index 9bbda39..2bc66f7 100644
 +{
 +	struct uci_element *e;
 +	char *proto_name = NULL;
-+	const char *dev_name = NULL;
-+	const char *iface_name = NULL;
-+	bool found = false;
 +	struct interface *iface;
 +	uci_foreach_element(&uci_network->sections, e)
 +	{
 +		struct uci_section *s = uci_to_section(e);
 +
-+		if (!strncmp(s->type, "proto", strlen("proto"))) {
++		if (!strcmp(s->type, "proto")) {
 +			if(s->e.name == NULL){
 +				goto error;
 +			}
-+			
++
 +			//Save protocol name
 +			proto_name = strdup(s->e.name);
-+			if(!proto_name)
-+			{
-+				//Could not read proto name
++			if(!proto_name) {
++				netifd_log_message(L_CRIT, "%s:%d error allocating UCI section name", __func__, __LINE__);
 +				goto error;
 +			}
-+			iface_name = uci_lookup_option_string(uci_ctx, s, "ifname");
-+			if(!iface_name)
-+			{
-+				//Could not read option ifname
++
++			const char *proto_device = uci_lookup_option_string(uci_ctx, s, "device");
++			if(!proto_device) {
++				netifd_log_message(L_WARNING, "%s:%d device missing from proto '%s' UCI section - invalid configuration.", __func__, __LINE__, proto_name);
 +				goto error;
 +			}
++
 +			struct device *dev= NULL;
-+			dev = device_find(iface_name);
-+			if(!dev)
-+				continue;
-+			
-+			if(!dev->present)
-+			{
-+				netifd_log_message(L_DEBUG, "%s:%d device %s not present. skipping...", __func__, __LINE__, dev->ifname);
++			dev = device_find(proto_device);
++			if(!dev || !dev->present) {
++				netifd_log_message(L_DEBUG, "%s:%d device %s not present. skipping...", __func__, __LINE__, proto_device);
 +				continue;
 +			}
-+			if(ifname && strcmp(ifname, iface_name))
-+			{
-+				//Interface name does not match.
-+				continue;
-+			}
-+			//Read option device to get device name
-+			dev_name = uci_lookup_option_string(uci_ctx, s, "device");
-+			if (!dev_name) {
-+				//device option could not be read.
++
++			const char *proto_ifname = uci_lookup_option_string(uci_ctx, s, "ifname");
++			if (!proto_ifname) {
++				netifd_log_message(L_WARNING, "%s:%d ifname missing from proto '%s' UCI section - invalid configuration.", __func__, __LINE__, proto_name);
 +				goto error;
 +			}
 +
-+			//Find the interface that has this device set as its main device
-+			vlist_for_each_element(&interfaces, iface, node)
-+			{
-+				if(iface->main_dev.dev->ifname && !strcmp(iface_name, iface->main_dev.dev->ifname))
-+				{
-+					found = true;
-+					netifd_log_message(L_DEBUG, "%s:%d Redo config for %s proto %s", __func__, __LINE__, iface->main_dev.dev->ifname, proto_name);
-+					config_interface_redo_config(iface, proto_name);
-+					proto_init_interface(iface, iface->config);
-+				}
-+			}
++			if (ifname && strcmp(ifname, proto_ifname))
++				continue;
 +
-+			if(!found)
-+				netifd_log_message(L_DEBUG, "%s:%d No match found for device %s", __func__, __LINE__, dev_name);
++			// Find the interface that supports this multi protocol and check whether the device matches
++			iface = vlist_find(&interfaces, proto_ifname, iface, node);
++			if (!iface || !iface->main_dev.dev || strcmp(iface->main_dev.dev->ifname, proto_device)) {
++				netifd_log_message(L_DEBUG, "%s:%d Device '%s' not found on interface '%s'", __func__, __LINE__, proto_device, proto_ifname);
++				continue;
++			}
++			if (iface->proto_handler && iface->proto_handler->name && !strcmp(iface->proto_handler->name, proto_name)) {
++				netifd_log_message(L_DEBUG, "%s:%d Interface '%s' already using protocol: '%s'", __func__, __LINE__, proto_ifname, iface->proto_handler->name);
++			} else {
++				netifd_log_message(L_DEBUG, "%s:%d Redo config for %s proto %s", __func__, __LINE__, iface->main_dev.dev->ifname, proto_name);
++				config_interface_redo_config(iface, proto_name);
++				proto_init_interface(iface, iface->config);
++			}
 +		}
 +	}
 +error:
 +	free(proto_name);
-+	free((char*)dev_name);
 +}
  
  static struct blob_attr *
  config_find_blobmsg_attr(struct blob_attr *attr, const char *name, int type)
 diff --git a/config.h b/config.h
-index ae77ed1..c66dc61 100644
+index 635a398..628c50c 100644
 --- a/config.h
 +++ b/config.h
-@@ -22,4 +22,5 @@ extern bool config_init;
- int config_init_all(void);
- struct ether_addr *config_get_default_macaddr(const char *ifname);
+@@ -24,4 +24,5 @@ struct ether_addr *config_get_default_macaddr(const char *ifname);
+ int config_get_default_gro(const char *ifname);
+ const char *config_get_default_conduit(const char *ifname);
  
 +void config_init_proto(const char *ifname);
  #endif
 diff --git a/interface.c b/interface.c
-index b3bb601..253eb99 100644
+index 03c781b..d8cb018 100644
 --- a/interface.c
 +++ b/interface.c
-@@ -26,6 +26,8 @@
- #include "config.h"
- #include "system.h"
- 
-+struct device_user atm_dev;
-+struct device_user ptm_dev;
- struct vlist_tree interfaces;
- static LIST_HEAD(iface_all_users);
- 
-@@ -474,6 +476,51 @@ interface_l3_dev_cb(struct device_user *dep, enum device_event ev)
- 	}
+@@ -721,6 +721,9 @@ interface_do_reload(struct interface *iface)
+ 	interface_cleanup_state(iface);
+ 	proto_init_interface(iface, iface->config);
+ 	interface_claim_device(iface);
++	// Re-init the protocol config incase this is an anywan device and the claim_device has
++	// identified a different main device
++	config_init_proto(iface->name);
  }
  
-+static void interface_wan_dev_cb(struct device_user *dep, enum device_event ev)
-+{
-+	struct interface *iface = NULL;
-+
-+	iface = vlist_find(&interfaces, "wan", iface, node);
-+	switch (ev) {
-+	case DEV_EVENT_LINK_UP:
-+	case DEV_EVENT_ADD:
-+		netifd_log_message(L_DEBUG, "%s:%d got event EVENT_LINK_UP or EVENT_ADD for %s", __func__, __LINE__, dep->dev->ifname);
-+
-+		
-+		config_init_proto(dep->dev->ifname);
-+		interface_set_up(iface);
-+		interface_set_main_dev(iface, dep->dev);
-+		break;
-+	default:
-+		break;
-+	}
-+}
-+
-+void interface_add_wan_dev_user()
-+{
-+	struct device *dev = NULL;
-+	char *atm_dev_name="atm0";
-+	char *ptm_dev_name="ptm0";
-+	
-+	dev = device_find(atm_dev_name);
-+	if(dev){
-+		netifd_log_message(L_DEBUG, "%s:%d registering cb for %s", __func__, __LINE__, atm_dev_name);
-+		atm_dev.cb = interface_wan_dev_cb;
-+		device_add_user(&atm_dev, dev);
-+	}
-+	else
-+		netifd_log_message(L_DEBUG, "%s:%d dev %s NOT found", __func__, __LINE__, atm_dev_name);
-+
-+	dev = device_find(ptm_dev_name);
-+	if(dev){
-+		netifd_log_message(L_DEBUG, "%s:%d registering cb for %s", __func__, __LINE__, atm_dev_name);
-+		ptm_dev.cb = interface_wan_dev_cb;
-+		device_add_user(&ptm_dev, dev);
-+	}
-+	else
-+		netifd_log_message(L_DEBUG, "%s:%d dev %s NOT found", __func__, __LINE__, ptm_dev_name);
-+}
-+
- void
- interface_set_available(struct interface *iface, bool new_state)
- {
-@@ -1166,7 +1213,7 @@ void
- interface_start_pending(void)
+ static void
+@@ -1178,6 +1181,7 @@ interface_start_pending(void)
  {
  	struct interface *iface;
--
+ 
 +	config_init_proto(NULL);//Apply all proto sections
  	vlist_for_each_element(&interfaces, iface, node) {
  		if (iface->autostart)
  			interface_set_up(iface);
-diff --git a/interface.h b/interface.h
-index 73a9070..dda1458 100644
---- a/interface.h
-+++ b/interface.h
-@@ -176,7 +176,8 @@ struct interface {
- 	struct ubus_object ubus;
- };
- 
--
-+extern struct device_user atm_dev;
-+extern struct device_user ptm_dev;
- extern struct vlist_tree interfaces;
- extern const struct uci_blob_param_list interface_attr_list;
- 
-@@ -212,4 +213,5 @@ void interface_start_pending(void);
- void interface_start_jail(int netns_fd, const char *jail);
- void interface_stop_jail(int netns_fd);
- 
-+void interface_add_wan_dev_user();
- #endif
+@@ -1409,6 +1413,9 @@ interface_update(struct vlist_tree *tree, struct vlist_node *node_new,
+ 		interface_event(if_new, IFEV_CREATE);
+ 		proto_init_interface(if_new, if_new->config);
+ 		interface_claim_device(if_new);
++		// Re-init the protocol config incase this is an anywan device and the claim_device has
++		// identified a different main device
++		config_init_proto(if_new->name);
+ 		netifd_ubus_add_interface(if_new);
+ 	}
+ }

@@ -51,15 +51,15 @@ index 37f8c37..59dbe16 100644
  	DEV_ATTR_NEIGHGCSTALETIME,
  	DEV_ATTR_SENDREDIRECTS,
  	DEV_ATTR_NEIGHLOCKTIME,
-@@ -126,6 +127,7 @@ enum {
- 	DEV_OPT_ARP_ACCEPT		= (1ULL << 29),
- 	DEV_OPT_SPEED			= (1ULL << 30),
- 	DEV_OPT_DUPLEX			= (1ULL << 31),
-+	DEV_OPT_PORT_PRIORITY		= (1ULL << 32),
+@@ -145,6 +145,7 @@
+ 	DEV_OPT_GRO			= (1ULL << 37),
+ 	DEV_OPT_MASTER			= (1ULL << 38),
+ 	DEV_OPT_EEE			= (1ULL << 39),
++	DEV_OPT_PORT_PRIORITY	= (1ULL << 40),
  };
  
  /* events broadcasted to all users of a device */
-@@ -192,6 +194,7 @@ struct device_settings {
+@@ -196,6 +198,7 @@ struct device_settings {
  	bool multicast;
  	bool learning;
  	bool unicast_flood;
@@ -71,18 +71,18 @@ diff --git a/system-linux.c b/system-linux.c
 index a0cc382..f3d381e 100644
 --- a/system-linux.c
 +++ b/system-linux.c
-@@ -595,6 +595,11 @@ static void system_bridge_set_unicast_flood(struct device *dev, const char *val)
- 	system_set_dev_sysfs("brport/unicast_flood", dev->ifname, val);
+@@ -524,6 +524,11 @@
+        system_set_dev_sysfs("brport/unicast_flood", dev->ifname, val);
  }
  
 +static void system_bridge_set_port_priority(struct device *dev, const char *val)
 +{
-+	system_set_dev_sysfs("brport/priority", dev->ifname, val);
++       system_set_dev_sysfs("brport/priority", dev->ifname, val);
 +}
 +
- static void system_bridge_set_vlan_filtering(struct device *dev, const char *val)
+ static int system_get_disable_ipv6(struct device *dev, char *buf, const size_t buf_sz)
  {
- 	system_set_dev_sysfs("bridge/vlan_filtering", dev->ifname, val);
+        return system_get_dev_sysctl("ipv6/conf", "disable_ipv6",
 @@ -952,6 +957,11 @@ retry:
  	    !dev->settings.unicast_flood)
  		system_bridge_set_unicast_flood(dev, "0");

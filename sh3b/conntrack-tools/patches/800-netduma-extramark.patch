@@ -1,11 +1,11 @@
-© Netduma Software Ltd 2021
-
 Added extra_mark to skb and ct.
 This patch is a combination of Netduma patches provided in NG-204909.
 
---- a/src/conntrack.c
-+++ b/src/conntrack.c
-@@ -84,6 +84,7 @@ static struct {
+Index: conntrack-tools-1.4.8/src/conntrack.c
+===================================================================
+--- conntrack-tools-1.4.8.orig/src/conntrack.c
++++ conntrack-tools-1.4.8/src/conntrack.c
+@@ -91,6 +91,7 @@ struct ct_tmpl {
  
  	/* Allows filtering/setting specific bits in the ctmark */
  	struct u32_mask mark;
@@ -13,7 +13,7 @@ This patch is a combination of Netduma patches provided in NG-204909.
  
  	/* Allow to filter by mark from kernel-space. */
  	struct nfct_filter_dump_mark filter_mark_kernel;
-@@ -281,6 +282,9 @@ enum ct_options {
+@@ -249,6 +250,9 @@ enum ct_options {
  
  	CT_OPT_REPL_ZONE_BIT	= 28,
  	CT_OPT_REPL_ZONE	= (1 << CT_OPT_REPL_ZONE_BIT),
@@ -23,7 +23,7 @@ This patch is a combination of Netduma patches provided in NG-204909.
  };
  /* If you add a new option, you have to update NUMBER_OF_OPT in conntrack.h */
  
-@@ -288,7 +292,7 @@ enum ct_options {
+@@ -256,7 +260,7 @@ enum ct_options {
  #define CT_COMPARISON (CT_OPT_PROTO | CT_OPT_ORIG | CT_OPT_REPL | \
  		       CT_OPT_MARK | CT_OPT_SECMARK |  CT_OPT_STATUS | \
  		       CT_OPT_ID | CT_OPT_ZONE | CT_OPT_LABEL | \
@@ -32,7 +32,7 @@ This patch is a combination of Netduma patches provided in NG-204909.
  
  static const char *optflags[NUMBER_OF_OPT] = {
  	[CT_OPT_ORIG_SRC_BIT] 	= "src",
-@@ -320,6 +324,7 @@ static const char *optflags[NUMBER_OF_OP
+@@ -288,6 +292,7 @@ static const char *optflags[NUMBER_OF_OP
  	[CT_OPT_DEL_LABEL_BIT]	= "label-del",
  	[CT_OPT_ORIG_ZONE_BIT]	= "orig-zone",
  	[CT_OPT_REPL_ZONE_BIT]	= "reply-zone",
@@ -40,84 +40,70 @@ This patch is a combination of Netduma patches provided in NG-204909.
  };
  
  static struct option original_opts[] = {
-@@ -365,11 +370,12 @@ static struct option original_opts[] = {
+@@ -334,11 +339,12 @@ static struct option original_opts[] = {
  	{"label-del", 2, 0, '>'},
  	{"orig-zone", 1, 0, '('},
  	{"reply-zone", 1, 0, ')'},
-+        {"extramark", 1, 0, 'k'},
++	{"extramark", 1, 0, 'k'},
  	{0, 0, 0, 0}
  };
  
- static const char *getopt_str = ":L::I::U::D::G::E::F::hVs:d:r:q:"
+ static const char *getopt_str = ":L::I::U::D::G::E::F::A::hVs:d:r:q:"
 -				"p:t:u:e:a:z[:]:{:}:m:i:f:o:n::"
 +				"p:t:u:e:a:z[:]:{:}:m:i:k:f:o:n::"
  				"g::c:b:C::Sj::w:l:<:>::(:):";
  
  /* Table of legal combinations of commands and options.  If any of the
-@@ -385,26 +391,26 @@ static const char *getopt_str = ":L::I::
+@@ -354,27 +360,27 @@ static const char *getopt_str = ":L::I::
  static char commands_v_options[NUMBER_OF_CMD][NUMBER_OF_OPT] =
  /* Well, it's better than "Re: Linux vs FreeBSD" */
  {
--          /*   s d r q p t u z e [ ] { } a m i f n g o c b j w l < > ( ) */
--/*CT_LIST*/   {2,2,2,2,2,0,2,2,0,0,0,2,2,0,2,0,2,2,2,2,2,0,2,2,2,0,0,2,2},
--/*CT_CREATE*/ {3,3,3,3,1,1,2,0,0,0,0,0,0,2,2,0,0,2,2,0,0,0,0,2,0,2,0,2,2},
--/*CT_UPDATE*/ {2,2,2,2,2,2,2,0,0,0,0,2,2,0,2,2,2,2,2,2,0,0,0,0,2,2,2,0,0},
--/*CT_DELETE*/ {2,2,2,2,2,2,2,0,0,0,0,2,2,0,2,2,2,2,2,2,0,0,0,2,2,0,0,2,2},
--/*CT_GET*/    {3,3,3,3,1,0,0,0,0,0,0,0,0,0,0,2,0,0,0,2,0,0,0,0,2,0,0,0,0},
--/*CT_FLUSH*/  {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
--/*CT_EVENT*/  {2,2,2,2,2,0,0,0,2,0,0,2,2,0,2,0,0,2,2,2,2,2,2,2,2,0,0,2,2},
--/*VERSION*/   {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
--/*HELP*/      {0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
--/*EXP_LIST*/  {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0,0,2,0,0,0,0,0,0,0,0,0},
--/*EXP_CREATE*/{1,1,2,2,1,1,2,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
--/*EXP_DELETE*/{1,1,2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
--/*EXP_GET*/   {1,1,2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
--/*EXP_FLUSH*/ {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
--/*EXP_EVENT*/ {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0},
--/*CT_COUNT*/  {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
--/*EXP_COUNT*/ {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
--/*CT_STATS*/  {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
--/*EXP_STATS*/ {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-+          /*   s d r q p t u z e [ ] { } a m i f n g o c b j w l < > ( ) k */
-+/*CT_LIST*/   {2,2,2,2,2,0,2,2,0,0,0,2,2,0,2,0,2,2,2,2,2,0,2,2,2,0,0,2,2,2},
-+/*CT_CREATE*/ {3,3,3,3,1,1,2,0,0,0,0,0,0,2,2,0,0,2,2,0,0,0,0,2,0,2,0,2,2,2},
-+/*CT_UPDATE*/ {2,2,2,2,2,2,2,0,0,0,0,2,2,0,2,2,2,2,2,2,0,0,0,0,2,2,2,0,0,2},
-+/*CT_DELETE*/ {2,2,2,2,2,2,2,0,0,0,0,2,2,0,2,2,2,2,2,2,0,0,0,2,2,0,0,2,2,2},
-+/*CT_GET*/    {3,3,3,3,1,0,0,0,0,0,0,0,0,0,0,2,0,0,0,2,0,0,0,0,2,0,0,0,0,0},
-+/*CT_FLUSH*/  {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-+/*CT_EVENT*/  {2,2,2,2,2,0,0,0,2,0,0,2,2,0,2,0,0,2,2,2,2,2,2,2,2,0,0,2,2,2},
-+/*VERSION*/   {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-+/*HELP*/      {0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-+/*EXP_LIST*/  {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0,0,2,0,0,0,0,0,0,0,0,0,0},
-+/*EXP_CREATE*/{1,1,2,2,1,1,2,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-+/*EXP_DELETE*/{1,1,2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-+/*EXP_GET*/   {1,1,2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-+/*EXP_FLUSH*/ {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-+/*EXP_EVENT*/ {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0},
-+/*CT_COUNT*/  {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-+/*EXP_COUNT*/ {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-+/*CT_STATS*/  {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-+/*EXP_STATS*/ {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+-			/* s d r q p t u z e [ ] { } a m i f n g o c b j w l < > ( ) */
+-	[CT_LIST_BIT]	= {2,2,2,2,2,0,2,2,0,0,0,2,2,0,2,0,2,2,2,2,2,0,2,2,2,0,0,2,2},
+-	[CT_CREATE_BIT]	= {3,3,3,3,1,1,2,0,0,0,0,0,0,2,2,0,0,2,2,0,0,0,0,2,0,2,0,2,2},
+-	[CT_UPDATE_BIT]	= {2,2,2,2,2,2,2,0,0,0,0,2,2,0,2,2,2,2,2,2,0,0,0,0,2,2,2,0,0},
+-	[CT_DELETE_BIT]	= {2,2,2,2,2,2,2,0,0,0,0,2,2,0,2,2,2,2,2,2,0,0,0,2,2,0,0,2,2},
+-	[CT_GET_BIT]	= {3,3,3,3,1,0,0,0,0,0,0,0,0,0,0,2,0,0,0,2,0,0,0,0,2,0,0,0,0},
+-	[CT_FLUSH_BIT]	= {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0},
+-	[CT_EVENT_BIT]	= {2,2,2,2,2,0,0,0,2,0,0,2,2,0,2,0,2,2,2,2,2,2,2,2,2,0,0,2,2},
+-	[CT_VERSION_BIT]= {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+-	[CT_HELP_BIT]	= {0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+-	[EXP_LIST_BIT]	= {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0,0,2,0,0,0,0,0,0,0,0,0},
+-	[EXP_CREATE_BIT]= {1,1,2,2,1,1,2,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+-	[EXP_DELETE_BIT]= {1,1,2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+-	[EXP_GET_BIT]	= {1,1,2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+-	[EXP_FLUSH_BIT]	= {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+-	[EXP_EVENT_BIT]	= {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0},
+-	[CT_COUNT_BIT]	= {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+-	[EXP_COUNT_BIT]	= {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+-	[CT_STATS_BIT]	= {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+-	[EXP_STATS_BIT]	= {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+-	[CT_ADD_BIT]	= {3,3,3,3,1,1,2,0,0,0,0,0,0,2,2,0,0,2,2,0,0,0,0,2,0,2,0,2,2},
++			/* s d r q p t u z e [ ] { } a m i f n g o c b j w l < > ( ) k */
++	[CT_LIST_BIT]	= {2,2,2,2,2,0,2,2,0,0,0,2,2,0,2,0,2,2,2,2,2,0,2,2,2,0,0,2,2,2},
++	[CT_CREATE_BIT]	= {3,3,3,3,1,1,2,0,0,0,0,0,0,2,2,0,0,2,2,0,0,0,0,2,0,2,0,2,2,2},
++	[CT_UPDATE_BIT]	= {2,2,2,2,2,2,2,0,0,0,0,2,2,0,2,2,2,2,2,2,0,0,0,0,2,2,2,0,0,2},
++	[CT_DELETE_BIT]	= {2,2,2,2,2,2,2,0,0,0,0,2,2,0,2,2,2,2,2,2,0,0,0,2,2,0,0,2,2,2},
++	[CT_GET_BIT]	= {3,3,3,3,1,0,0,0,0,0,0,0,0,0,0,2,0,0,0,2,0,0,0,0,2,0,0,0,0,0},
++	[CT_FLUSH_BIT]	= {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0},
++	[CT_EVENT_BIT]	= {2,2,2,2,2,0,0,0,2,0,0,2,2,0,2,0,2,2,2,2,2,2,2,2,2,0,0,2,2,2},
++	[CT_VERSION_BIT]= {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
++	[CT_HELP_BIT]	= {0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
++	[EXP_LIST_BIT]	= {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0,0,2,0,0,0,0,0,0,0,0,0,0},
++	[EXP_CREATE_BIT]= {1,1,2,2,1,1,2,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
++	[EXP_DELETE_BIT]= {1,1,2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
++	[EXP_GET_BIT]	= {1,1,2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
++	[EXP_FLUSH_BIT]	= {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
++	[EXP_EVENT_BIT]	= {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0},
++	[CT_COUNT_BIT]	= {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
++	[EXP_COUNT_BIT]	= {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
++	[CT_STATS_BIT]	= {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
++	[EXP_STATS_BIT]	= {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
++	[CT_ADD_BIT]	= {3,3,3,3,1,1,2,0,0,0,0,0,0,2,2,0,0,2,2,0,0,0,0,2,0,2,0,2,2,2},
  };
  
  static const int cmd2type[][2] = {
-@@ -432,6 +438,7 @@ static const int opt2type[] = {
- 	['n']	= CT_OPT_SRC_NAT,
- 	['g']	= CT_OPT_DST_NAT,
- 	['m']	= CT_OPT_MARK,
-+	['k']	= CT_OPT_EXTRA_MARK,
- 	['c']	= CT_OPT_SECMARK,
- 	['i']	= CT_OPT_ID,
- 	['j']	= CT_OPT_ANY_NAT,
-@@ -483,6 +490,7 @@ static const int opt2attr[] = {
- 	[']']	= ATTR_ORIG_L3PROTO,
- 	['m']	= ATTR_MARK,
- 	['c']	= ATTR_SECMARK,
-+	['k']	= ATTR_EXTRA_MARK,
- 	['i']	= ATTR_ID,
- 	['w']	= ATTR_ZONE,
- 	['l']	= ATTR_CONNLABELS,
-@@ -843,6 +851,12 @@ static int mark_cmp(const struct u32_mas
+@@ -1083,6 +1089,13 @@ static int mark_cmp(const struct u32_mas
  		(nfct_get_attr_u32(ct, ATTR_MARK) & m->mask) == m->value;
  }
  
@@ -127,18 +113,20 @@ This patch is a combination of Netduma patches provided in NG-204909.
 +		(nfct_get_attr_u32(ct, ATTR_EXTRA_MARK) & m->mask) == m->value;
 +}
 +
++
  #define PARSE_STATUS 0
  #define PARSE_EVENT 1
  #define PARSE_OUTPUT 2
-@@ -1235,6 +1249,18 @@ filter_mark(const struct nf_conntrack *c
+@@ -1522,6 +1535,19 @@ static int filter_mark(const struct ct_c
  	return 0;
  }
  
 +static int
-+filter_extra_mark(const struct nf_conntrac *ct)
++filter_extra_mark(const struct ct_cmd *cmd, const struct nf_conntrack *ct)
 +{
-+        if ((options & CT_OPT_EXTRA_MARK) &&
-+		!extra_mark_cmp(&tmpl.extra_mark,ct))
++	const struct ct_tmpl *tmpl = &cmd->tmpl;
++        if ((cmd->options & CT_OPT_EXTRA_MARK) &&
++		!extra_mark_cmp(&tmpl->extra_mark,ct))
 +        {
 +                return 1;
 +        }
@@ -146,80 +134,84 @@ This patch is a combination of Netduma patches provided in NG-204909.
 +        return 0;
 +}
 +
- static int 
- filter_nat(const struct nf_conntrack *obj, const struct nf_conntrack *ct)
+ static int filter_nat(const struct ct_cmd *cmd, const struct nf_conntrack *ct)
  {
-@@ -1380,6 +1406,7 @@ nfct_filter(struct nf_conntrack *obj, st
- {
- 	if (filter_nat(obj, ct) ||
- 	    filter_mark(ct) ||
-+	    filter_extra_mark(ct) ||
- 	    filter_label(ct) ||
- 	    filter_network(ct))
+ 	int check_srcnat = cmd->options & CT_OPT_SRC_NAT ? 1 : 0;
+@@ -1671,6 +1697,7 @@ nfct_filter(struct ct_cmd *cmd, struct n
+ 
+ 	if (filter_nat(cmd, ct) ||
+ 	    filter_mark(cmd, ct) ||
++	    filter_extra_mark(cmd, ct) ||
+ 	    filter_label(ct, tmpl) ||
+ 	    filter_network(cmd, ct))
  		return 1;
-@@ -1600,6 +1627,17 @@ static void copy_mark(struct nf_conntrac
+@@ -2066,6 +2093,17 @@ static void copy_mark(const struct ct_cm
  	}
  }
  
-+static void copy_extra_mark(struct nf_conntrack *tmp,
++static void copy_extra_mark(const struct ct_cmd *cmd, struct nf_conntrack *tmp,
 +		      const struct nf_conntrack *ct,
 +		      const struct u32_mask *m)
 +{
-+	if (options & CT_OPT_EXTRA_MARK) {
++	if (cmd->options & CT_OPT_EXTRA_MARK) {
 +		uint32_t mark = nfct_get_attr_u32(ct, ATTR_EXTRA_MARK);
 +		mark = (mark & ~m->mask) ^ m->value;
 +		nfct_set_attr_u32(tmp, ATTR_EXTRA_MARK, mark);
 +	}
 +}
 +
- static void copy_status(struct nf_conntrack *tmp, const struct nf_conntrack *ct)
+ static void copy_status(const struct ct_cmd *cmd, struct nf_conntrack *tmp,
+ 			const struct nf_conntrack *ct)
  {
- 	if (options & CT_OPT_STATUS) {
-@@ -1704,6 +1742,7 @@ static int update_cb(enum nf_conntrack_m
+@@ -2181,6 +2219,7 @@ static int mnl_nfct_update_cb(const stru
  	nfct_copy(tmp, ct, NFCT_CP_ORIG);
  	nfct_copy(tmp, obj, NFCT_CP_META);
- 	copy_mark(tmp, ct, &tmpl.mark);
-+	copy_extra_mark(tmp, ct, &tmpl.extra_mark);
- 	copy_status(tmp, ct);
- 	copy_label(tmp, ct);
+ 	copy_mark(cmd, tmp, ct, &cur_tmpl->mark);
++	copy_extra_mark(cmd, tmp, ct, &cur_tmpl->extra_mark);
+ 	copy_status(cmd, tmp, ct);
+ 	copy_label(cmd, tmp, ct, cur_tmpl);
  
-@@ -2526,6 +2565,12 @@ int main(int argc, char *argv[])
+@@ -3128,6 +3167,12 @@ static void do_parse(struct ct_cmd *ct_c
  
  			free(optarg2);
  			break;
 +		case 'k':
-+			options |= opt2type[c];
-+			parse_u32_mask(optarg, &tmpl.extra_mark);
-+			tmpl.filter_mark_kernel.extra_val = tmpl.extra_mark.value;
-+			tmpl.filter_mark_kernel.extra_mask = tmpl.extra_mark.mask;
-+			break;
++                        options |= opt2type[c];
++                        parse_u32_mask(optarg, &tmpl->extra_mark);
++                        tmpl->filter_mark_kernel.extra_val = tmpl->extra_mark.value;
++                        tmpl->filter_mark_kernel.extra_mask = tmpl->extra_mark.mask;
++                        break;
  		case 'a':
  			fprintf(stderr, "WARNING: ignoring -%c, "
  					"deprecated option.\n", c);
-@@ -2691,6 +2736,9 @@ int main(int argc, char *argv[])
- 			nfct_set_attr(tmpl.ct, ATTR_CONNLABELS,
- 					xnfct_bitmask_clone(tmpl.label_modify));
+@@ -3311,6 +3356,9 @@ static int do_command_ct(const char *pro
+ 		if (cmd->options & CT_OPT_MARK)
+ 			nfct_set_attr_u32(cmd->tmpl.ct, ATTR_MARK, cmd->tmpl.mark.value);
  
-+		if (options & CT_OPT_EXTRA_MARK)
-+			nfct_set_attr_u32(tmpl.ct, ATTR_EXTRA_MARK, tmpl.extra_mark.value);
++		if (cmd->options & CT_OPT_EXTRA_MARK)
++			nfct_set_attr_u32(cmd->tmpl.ct, ATTR_EXTRA_MARK, cmd->tmpl.extra_mark.value);
 +
- 		cth = nfct_open(CONNTRACK, 0);
- 		if (!cth)
- 			exit_error(OTHER_PROBLEM, "Can't open handler");
---- a/include/conntrack.h
-+++ b/include/conntrack.h
-@@ -9,7 +9,7 @@
- #include <netinet/in.h>
+ 		if (cmd->options & CT_OPT_ADD_LABEL)
+ 			nfct_set_attr(cmd->tmpl.ct, ATTR_CONNLABELS,
+ 					xnfct_bitmask_clone(cmd->tmpl.label_modify));
+Index: conntrack-tools-1.4.8/include/conntrack.h
+===================================================================
+--- conntrack-tools-1.4.8.orig/include/conntrack.h
++++ conntrack-tools-1.4.8/include/conntrack.h
+@@ -78,7 +78,7 @@ enum ct_command {
+ };
  
- #define NUMBER_OF_CMD   19
+ #define NUMBER_OF_CMD   _CT_BIT_MAX
 -#define NUMBER_OF_OPT   29
 +#define NUMBER_OF_OPT   30
  
  struct nf_conntrack;
  
---- a/src/parse.c
-+++ b/src/parse.c
-@@ -82,6 +82,11 @@ static struct ct_parser h[NTA_MAX] = {
+Index: conntrack-tools-1.4.8/src/parse.c
+===================================================================
+--- conntrack-tools-1.4.8.orig/src/parse.c
++++ conntrack-tools-1.4.8/src/parse.c
+@@ -83,6 +83,11 @@ static struct ct_parser h[NTA_MAX] = {
  		.attr	= ATTR_MARK,
  		.size	= NTA_SIZE(sizeof(uint32_t)),
  	},
@@ -231,8 +223,10 @@ This patch is a combination of Netduma patches provided in NG-204909.
  	[NTA_TIMEOUT] = {
  		.parse	= ct_parse_u32,
  		.attr	= ATTR_TIMEOUT,
---- a/include/network.h
-+++ b/include/network.h
+Index: conntrack-tools-1.4.8/include/network.h
+===================================================================
+--- conntrack-tools-1.4.8.orig/include/network.h
++++ conntrack-tools-1.4.8/include/network.h
 @@ -208,6 +208,7 @@ enum nta_attr {
  	NTA_STATUS,		/* uint32_t */
  	NTA_TIMEOUT,		/* uint32_t */

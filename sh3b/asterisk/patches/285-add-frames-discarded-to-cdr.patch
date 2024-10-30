@@ -1,0 +1,60 @@
+--- a/cdr/cdr_csv.c
++++ b/cdr/cdr_csv.c
+@@ -320,6 +320,7 @@ static int build_csv_record(char *buf, s
+ 		append_int(buf, cdr->rtp_stats->averageFarEndInterarrivalJitter, bufsize);
+ 		append_int(buf, cdr->rtp_stats->receiveInterarrivalJitter, bufsize);
+ 		append_int(buf, cdr->rtp_stats->averageReceiveInterarrivalJitter, bufsize);
++		append_int(buf, cdr->rtp_stats->framesDiscarded, bufsize);
+ 	}
+ 	/* AMA Flags */
+ 	append_string(buf, ast_channel_amaflags2string(cdr->amaflags), bufsize);
+--- a/cdr/cdr_manager.c
++++ b/cdr/cdr_manager.c
+@@ -361,6 +361,7 @@ static int manager_log(struct ast_cdr *c
+ 	    "averageFarEndInterarrivalJitter: %lu\r\n"
+ 	    "receiveInterarrivalJitter: %lu\r\n"
+ 	    "averageReceiveInterarrivalJitter: %lu\r\n"
++	    "framesDiscarded: %lu\r\n"
+ 	    "UserField: %s\r\n"
+ 	    "%s",
+ 	    cdr->accountcode, cdr->src, cdr->dst, cdr->dcontext, cdr->clid, cdr->channel,
+@@ -375,7 +376,7 @@ static int manager_log(struct ast_cdr *c
+ 		cdr->rtp_stats->localLossRate, cdr->rtp_stats->remoteLossRate, cdr->rtp_stats->discarded, cdr->rtp_stats->lost, cdr->rtp_stats->rxpkts,
+ 		cdr->rtp_stats->txpkts, cdr->rtp_stats->jitter, cdr->rtp_stats->maxJitter, cdr->rtp_stats->localAvgRoundTripDelay, cdr->rtp_stats->remoteAvgRoundTripDelay,
+ 		cdr->rtp_stats->farEndInterarrivalJitter, cdr->rtp_stats->averageFarEndInterarrivalJitter, cdr->rtp_stats->receiveInterarrivalJitter,
+-		cdr->rtp_stats->averageReceiveInterarrivalJitter, cdr->userfield, buf);
++		cdr->rtp_stats->averageReceiveInterarrivalJitter, cdr->rtp_stats->framesDiscarded, cdr->userfield, buf);
+ 
+ 	return 0;
+ }
+--- a/include/asterisk/cdr.h
++++ b/include/asterisk/cdr.h
+@@ -306,6 +306,7 @@ typedef struct {
+ 	uint32_t averageFarEndInterarrivalJitter;
+ 	uint16_t receiveInterarrivalJitter;
+ 	uint32_t averageReceiveInterarrivalJitter;
++	uint32_t framesDiscarded;
+ } cdr_rtp_statistics;
+ 
+ /*!
+--- a/include/asterisk/channel.h
++++ b/include/asterisk/channel.h
+@@ -630,6 +630,7 @@ typedef struct {
+ 	uint32_t averageFarEndInterarrivalJitter;
+ 	uint16_t receiveInterarrivalJitter;
+ 	uint32_t averageReceiveInterarrivalJitter;
++	uint32_t framesDiscarded;
+ } rtp_statistics;
+ 
+ /*!
+--- a/main/cdr.c
++++ b/main/cdr.c
+@@ -3315,6 +3315,8 @@ void ast_cdr_format_var(struct ast_cdr *
+ 		snprintf(workspace, workspacelen, "%lu", cdr->rtp_stats->receiveInterarrivalJitter);
+ 	} else if (!strcasecmp(name, "averageReceiveInterarrivalJitter")) {
+ 		snprintf(workspace, workspacelen, "%lu", cdr->rtp_stats->averageReceiveInterarrivalJitter);
++	} else if (!strcasecmp(name, "framesDiscarded")) {
++		snprintf(workspace, workspacelen, "%lu", cdr->rtp_stats->framesDiscarded);
+ 	} else {
+ 		workspace[0] = '\0';
+ 	}

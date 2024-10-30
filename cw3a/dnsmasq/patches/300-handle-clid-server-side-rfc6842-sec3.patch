@@ -1,0 +1,92 @@
+--- a/src/rfc2131.c
++++ b/src/rfc2131.c
+@@ -31,6 +31,7 @@ static unsigned int calc_time(struct dhc
+ static void option_put(struct dhcp_packet *mess, unsigned char *end, int opt, int len, unsigned int val);
+ static void option_put_string(struct dhcp_packet *mess, unsigned char *end, 
+ 			      int opt, const char *string, int null_term);
++static void option_put_hex(struct dhcp_packet *mess, unsigned char *end, int opt, int len, unsigned char *val);
+ static struct in_addr option_addr(unsigned char *opt);
+ static unsigned int option_uint(unsigned char *opt, int offset, int size);
+ static void log_packet(char *type, void *addr, unsigned char *ext_mac, 
+@@ -103,6 +104,7 @@ size_t dhcp_reply(struct dhcp_context *c
+ #ifdef HAVE_SCRIPT
+   unsigned char *class = NULL;
+ #endif
++  unsigned char *mess_clid = NULL;
+ 
+   subnet_addr.s_addr = override.s_addr = 0;
+ 
+@@ -241,6 +243,10 @@ size_t dhcp_reply(struct dhcp_context *c
+ 	{
+ 	  clid_len = option_len(opt);
+ 	  clid = option_ptr(opt, 0);
++	  mess_clid = (unsigned char *) calloc(clid_len, sizeof(unsigned char));
++	  if (!mess_clid)
++	      return 0;
++	  memcpy(mess_clid, clid, clid_len);
+ 	}
+ 
+       /* do we have a lease in store? */
+@@ -1170,6 +1176,11 @@ size_t dhcp_reply(struct dhcp_context *c
+       option_put(mess, end, OPTION_MESSAGE_TYPE, 1, DHCPOFFER);
+       option_put(mess, end, OPTION_SERVER_IDENTIFIER, INADDRSZ, ntohl(server_id(context, override, fallback).s_addr));
+       option_put(mess, end, OPTION_LEASE_TIME, 4, time);
++      if (mess_clid)
++        {
++          option_put_hex(mess, end, OPTION_CLIENT_ID, clid_len, mess_clid);
++          free(mess_clid);
++        }
+       /* T1 and T2 are required in DHCPOFFER by HP's wacky Jetdirect client. */
+       do_options(context, mess, end, req_options, offer_hostname, get_domain(mess->yiaddr), 
+ 		 netid, subnet_addr, fqdn_flags, borken_opt, pxearch, uuid, vendor_class_len, now, time, fuzz, pxevendor);
+@@ -1362,6 +1373,11 @@ size_t dhcp_reply(struct dhcp_context *c
+ 	  option_put(mess, end, OPTION_MESSAGE_TYPE, 1, DHCPNAK);
+ 	  option_put(mess, end, OPTION_SERVER_IDENTIFIER, INADDRSZ, ntohl(server_id(context, override, fallback).s_addr));
+ 	  option_put_string(mess, end, OPTION_MESSAGE, message, borken_opt);
++          if (mess_clid)
++            {
++              option_put_hex(mess, end, OPTION_CLIENT_ID, clid_len, mess_clid);
++              free(mess_clid);
++            }
+ 	  /* This fixes a problem with the DHCP spec, broadcasting a NAK to a host on 
+ 	     a distant subnet which unicast a REQ to us won't work. */
+ 	  if (!unicast_dest || mess->giaddr.s_addr != 0 || 
+@@ -1519,6 +1535,11 @@ size_t dhcp_reply(struct dhcp_context *c
+ 	  option_put(mess, end, OPTION_MESSAGE_TYPE, 1, DHCPACK);
+ 	  option_put(mess, end, OPTION_SERVER_IDENTIFIER, INADDRSZ, ntohl(server_id(context, override, fallback).s_addr));
+ 	  option_put(mess, end, OPTION_LEASE_TIME, 4, time);
++          if (mess_clid)
++            {
++              option_put_hex(mess, end, OPTION_CLIENT_ID, clid_len, mess_clid);
++              free(mess_clid);
++            }
+ 	  if (rapid_commit)
+ 	     option_put(mess, end, OPTION_RAPID_COMMIT, 0, 0);
+ 	   do_options(context, mess, end, req_options, hostname, get_domain(mess->yiaddr), 
+@@ -1573,6 +1594,11 @@ size_t dhcp_reply(struct dhcp_context *c
+       clear_packet(mess, end);
+       option_put(mess, end, OPTION_MESSAGE_TYPE, 1, DHCPACK);
+       option_put(mess, end, OPTION_SERVER_IDENTIFIER, INADDRSZ, ntohl(server_id(context, override, fallback).s_addr));
++      if (mess_clid)
++        {
++          option_put_hex(mess, end, OPTION_CLIENT_ID, clid_len, mess_clid);
++          free(mess_clid);
++        }
+      
+       /* RFC 2131 says that DHCPINFORM shouldn't include lease-time parameters, but 
+ 	 we supply a utility which makes DHCPINFORM requests to get this information.
+@@ -2128,6 +2154,14 @@ static int do_encap_opts(struct dhcp_opt
+   return ret;
+ }
+ 
++static void option_put_hex(struct dhcp_packet *mess, unsigned char *end, int opt, int len, unsigned char *val)
++{
++  unsigned char *p = free_space(mess, end, opt, len);
++
++  if (p)
++     memcpy(p, val, len);
++}
++
+ static void pxe_misc(struct dhcp_packet *mess, unsigned char *end, unsigned char *uuid, const char *pxevendor)
+ {
+   unsigned char *p;

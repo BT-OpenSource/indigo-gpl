@@ -1,22 +1,20 @@
 --- a/pjsip/src/pjsip-simple/evsub.c
 +++ b/pjsip/src/pjsip-simple/evsub.c
-@@ -1792,9 +1792,17 @@
- 	    status = pjsip_auth_clt_reinit_req(&sub->dlg->auth_sess,
- 					       event->body.tsx_state.src.rdata,
- 					       tsx->last_tx, &tdata);
--	    if (status == PJ_SUCCESS) 
-+	    if (status == PJ_SUCCESS) {
- 		status = pjsip_dlg_send_request(sub->dlg, tdata, -1, NULL);
--	    
-+	    }
-+	    else if (status == PJSIP_ENOCREDENTIAL) {
-+	        /* Let callback handle Authentication response */
+@@ -1822,8 +1822,16 @@ static void on_tsx_state_uac( pjsip_evsub *sub, pjsip_transaction *tsx,
+             status = pjsip_auth_clt_reinit_req(&sub->dlg->auth_sess,
+                                                event->body.tsx_state.src.rdata,
+                                                tsx->last_tx, &tdata);
+-            if (status == PJ_SUCCESS) 
++            if (status == PJ_SUCCESS) {
+                 status = pjsip_dlg_send_request(sub->dlg, tdata, -1, NULL);
++            }
++            else if (status == PJSIP_ENOCREDENTIAL) {
++	            /* Let callback handle Authentication response */
 +                if (sub->user.on_evsub_state && sub->call_cb) {
-+			(*sub->user.on_evsub_state)(sub, event);
-+			return;
-+		}
-+	    }
-+
- 	    if (status != PJ_SUCCESS) {
- 		/* Authentication failed! */
- 		set_state(sub, PJSIP_EVSUB_STATE_TERMINATED,
++			        (*sub->user.on_evsub_state)(sub, event);
++			        return;
++		        }
++	        }
+             
+             if (status != PJ_SUCCESS) {
+                 /* Authentication failed! */

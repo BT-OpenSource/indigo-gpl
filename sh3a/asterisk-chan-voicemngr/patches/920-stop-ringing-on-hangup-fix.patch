@@ -1,0 +1,14 @@
+--- a/src/channels/chan_voicemngr.c
++++ b/src/channels/chan_voicemngr.c
+@@ -1570,8 +1570,9 @@
+ 			sub_peer->onhold_hangup_timer_id != -1 && sub->channel_state == RINGING) {
+ 		ast_debug(2, "There is a forgotten onhold call, not releasing channel\n");
+ 		endpt_signal(sub->parent->line_id, "ringback", "off", NULL);
+-	} else if (sub->channel_state == RINGING || sub->onhold_hangup_timer_id != -1) {
+-		// Stop ringing if other end hungs up before we answered
++	} else if (sub->channel_state == RINGING || sub->onhold_hangup_timer_id != -1 ||
++			(sub->channel_state == ONHOLD && sub_peer->channel_state == RINGING)) {
++		// Stop ringing if hangs up before we answered
+ 		channel_settings *s = &channel_config[p->line_id];
+ 
+ 		if (!s->calleridenable) {

@@ -1,0 +1,14 @@
+--- a/res/res_pjsip_session.c
++++ b/res/res_pjsip_session.c
+@@ -5017,7 +5017,10 @@ static void session_inv_on_state_changed(pjsip_inv_session *inv, pjsip_event *e)
+ 			 * error can occur when a TCP socket closes and that can be the result
+ 			 * of a 503. Also we may need to failover on a timeout (408).
+ 			 */
+-			check_request_status(inv, e);
++			if (!check_request_status(inv, e) && e->body.tsx_state.type == PJSIP_EVENT_TIMER) {
++				ast_log(LOG_WARNING, "Request timeout. Failover is not available. Re-registering.");
++				pjsip_outbound_registration_register();
++			}
+ 			break;
+ 		case PJSIP_EVENT_USER:
+ 		case PJSIP_EVENT_UNKNOWN:

@@ -1,0 +1,68 @@
+--- a/include/asterisk/res_pjsip_outbound_registration.h
++++ b/include/asterisk/res_pjsip_outbound_registration.h
+@@ -55,4 +55,22 @@
+  */
+ void pjsip_outbound_registration_clear_dns_cache_control(void);
+ 
++/*! Registration event subscriber control function pointer typedef */
++typedef void (*event_subscriber_t)(void);
++
++/*!
++ * \brief Set reg event subscriber control function pointer
++ *
++ * Allow the outbound registration module to control event subscription
++ * if one is being used.
++ *
++ * \param event_sub Function pointer to set
++ */
++void pjsip_outbound_registration_event_sub_set(event_subscriber_t event_sub);
++
++/*!
++ * Clear registration event subscriber control function pointer
++ */
++void pjsip_outbound_registration_event_sub_clear(void);
++
+ #endif /* _RES_PJSIP_OUTBOUND_REGISTRATION_H */
+
+--- a/res/res_pjsip_outbound_registration.c
++++ b/res/res_pjsip_outbound_registration.c
+@@ -464,6 +464,9 @@
+ dns_cache_update_addr_t update_dns_cache_addr = NULL;
+ dns_cache_clear_t clear_dns_cache = NULL;
+ 
++/*! Registration event subscriber function pointer */
++event_subscriber_t event_subscriber = NULL;
++
+ /*! \brief Free any endpoint security mechanisms that have been stored */
+ static void clear_endpoint_security_mechanisms(struct sip_outbound_registration_client_state *client_state);
+ 
+@@ -986,6 +989,10 @@
+ 	 */
+ 	clear_endpoint_security_mechanisms(client_state);
+ 	ast_sip_auth_vector_destroy(&client_state->outbound_auths);
++
++	if (event_subscriber != NULL) {
++		(*event_subscriber)();
++	}
+ 
+ 	/*
+ 	 * Clear the auth data as we may reuse the client_state. Ignore any errors in finding
+@@ -3073,6 +3080,18 @@
+ 	clear_dns_cache = NULL;
+ }
+ 
++/* External API to set registration event subcriber control function pointer */
++void pjsip_outbound_registration_event_sub_set(event_subscriber_t event_sub)
++{
++	event_subscriber = event_sub;
++}
++
++/* External API to clear registration event subcriber control function pointer */
++void pjsip_outbound_registration_event_sub_clear(void)
++{
++	event_subscriber = NULL;
++}
++
+ static int unload_module(void)
+ {
+ 	int remaining;

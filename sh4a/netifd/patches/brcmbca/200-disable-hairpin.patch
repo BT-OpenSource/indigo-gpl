@@ -1,0 +1,12 @@
+--- a/system-linux.c
++++ b/system-linux.c
+@@ -541,7 +541,9 @@ static void system_bridge_set_multicast_
+ 
+ static void system_bridge_set_hairpin_mode(struct device *dev, const char *val)
+ {
++#if 0
+ 	system_set_dev_sysfs("brport/hairpin_mode", dev->ifname, val);
++#endif
+ }
+ 
+ static void system_bridge_set_proxyarp_wifi(struct device *dev, const char *val)

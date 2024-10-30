@@ -1,0 +1,17 @@
+diff --git a/libubus-io.c b/libubus-io.c
+index a1fb62b..5591387 100644
+--- a/libubus-io.c
++++ b/libubus-io.c
+@@ -260,8 +260,11 @@ static bool alloc_msg_buf(struct ubus_context *ctx, int len)
+ 		return true;
+ 
+ 	ptr = realloc(ctx->msgbuf.data, len);
+-	if (!ptr)
++	if (!ptr) {
++		if (errno == ENOMEM)
++			exit(errno);
+ 		return false;
++	}
+ 
+ 	ctx->msgbuf.data = ptr;
+ 	ctx->msgbuf_data_len = len;

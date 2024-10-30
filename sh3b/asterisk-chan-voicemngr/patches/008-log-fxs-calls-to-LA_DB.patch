@@ -1,0 +1,102 @@
+--- a/src/channels/chan_voicemngr.c
++++ b/src/channels/chan_voicemngr.c
+@@ -83,7 +83,7 @@ static void chan_voicemngr_process_incoming_rtcp_packet(struct chan_voicemngr_su
+ static void chan_voicemngr_process_outgoing_rtcp_packet(struct chan_voicemngr_subchannel *p, uint8_t *rtcp_frame, uint32_t rtcp_size);
+ static int chan_voicemngr_mute_connection(struct chan_voicemngr_subchannel *p);
+ static int chan_voicemngr_unmute_connection(struct chan_voicemngr_subchannel *p);
+-static int chan_voicemngr_close_connection(struct chan_voicemngr_subchannel *p);
++static int chan_voicemngr_close_connection(struct chan_voicemngr_subchannel *sub, struct ast_channel *ast);
+ static int chan_voicemngr_create_conference(struct chan_voicemngr_pvt *p);
+ static int chan_voicemngr_stop_conference(struct chan_voicemngr_subchannel *p);
+ static void chan_voicemngr_attended_call_transfer(struct chan_voicemngr_subchannel *sub, struct chan_voicemngr_subchannel *sub_peer,
+@@ -758,7 +760,13 @@ static void endpt_connection_data(int line, int id, const char *action, const st
+ 		blobmsg_add_u32(&bb, "id", id);
+ 		blobmsg_add_string(&bb, "action", action);
+ 
+-		if (data){
++		if (data && data->cid) {
++			ast_log(LOG_NOTICE, "call log: cid: %s, is_incoming: %d, line id: %d", data->cid,
++				       data->is_incoming, line);
++			blobmsg_add_string(&bb, "cid", data->cid);
++			blobmsg_add_u32(&bb, "is_incoming", data->is_incoming);
++		}
++		else if (data) {
+ 			ast_log(LOG_NOTICE, "connection parm_update, codec: %d, ptime: %d",data->codec, data->ptime);
+ 			if (data->mask & UBUS_DATA_CODEC_BIT){
+ 				blobmsg_add_u32(&bb, "codec", data->codec);
+@@ -1594,7 +1602,7 @@ static int chan_voicemngr_hangup(struct ast_channel *ast)
+ 	ast_module_unref(ast_module_info->self);
+ 	ast_verb(3, "Hungup '%s'\n", ast_channel_name(ast));
+ 	ast_channel_tech_pvt_set(ast, NULL);
+-	chan_voicemngr_close_connection(sub);
++	chan_voicemngr_close_connection(sub, ast);
+ 
+ 	/* Check for channel state before dial tone timeout */
+ 	if(sub->channel_state == CALLENDED && sub_peer->channel_state != INCALL) {
+@@ -1639,7 +1647,7 @@ static int chan_voicemngr_answer(struct ast_channel *ast)
+ 			ast_queue_control(peer->owner, AST_CONTROL_HANGUP);
+ 			peer->owner = NULL;
+ 			peer->channel_state = CALLENDED;
+-			chan_voicemngr_close_connection(peer);
++			chan_voicemngr_close_connection(peer, ast);
+ 		}
+ 	}
+ 
+@@ -2481,7 +2489,7 @@ static void handle_Rnumber_etsi(struct chan_voicemngr_subchannel *sub, struct ch
+ 
+ 				ast_queue_control(peer_owner, AST_CONTROL_HANGUP);
+ 				sub_peer->channel_state = CALLENDED;
+-				chan_voicemngr_close_connection(sub_peer);
++				chan_voicemngr_close_connection(sub_peer, peer_owner);
+ 			}
+ 			break;
+ 		/* Hangup current call and answer waiting call */
+@@ -2493,7 +2501,7 @@ static void handle_Rnumber_etsi(struct chan_voicemngr_subchannel *sub, struct ch
+ 					ast_queue_control(owner, AST_CONTROL_HANGUP);
+ 				}
+ 				sub->channel_state = CALLENDED;
+-				chan_voicemngr_close_connection(sub);
++				chan_voicemngr_close_connection(sub, owner);
+ 
+ 				if (sub_peer->channel_state == CALLWAITING) {
+ 					ast_log(LOG_WARNING, "R1 call waiting\n");
+@@ -2974,7 +2974,7 @@ static void handle_dect_event(struct cha
+ 	else if (event == EVENT_RELEASE) {
+ 		ast_log(LOG_NOTICE, "EVENT_RELEASE detected for phone line %d\n", sub->parent->line_id);
+ 		if (sub->channel_state == AWAITONHOOK && sub_peer->channel_state == ONHOOK) {
+-			chan_voicemngr_close_connection(sub);
++			chan_voicemngr_close_connection(sub, owner);
+ 		} else if (sub->channel_state == INCALL && sub_peer->channel_state != CALLWAITING) {
+ 			ast_log(LOG_ERROR, "Hanging up call\n");
+ 			ast_queue_control(owner, AST_CONTROL_HANGUP);
+@@ -5585,15 +5593,27 @@ static void chan_voicemngr_unattended_call_transfer(struct chan_voicemngr_subcha
+ 		ast_log(LOG_ERROR,"Late R5 ,Ignoring since conference should be set up by now \n");
+ }
+ 
+-static int chan_voicemngr_close_connection(struct chan_voicemngr_subchannel *sub)
++static int chan_voicemngr_close_connection(struct chan_voicemngr_subchannel *sub, struct ast_channel *ast)
+ {
+ 	struct chan_voicemngr_pvt *p = sub->parent;
+ 
+ 	if (sub->connection_init) {
+ 		if (!chan_voicemngr_in_onhold(p) && !chan_voicemngr_in_call(p) && !chan_voicemngr_in_dialing(p) && !chan_voicemngr_in_ringback(p) &&
+ 			!chan_voicemngr_in_callwaiting(p) && !chan_voicemngr_in_transferring(p)) { // Does the line have another call?
+-			ast_debug(1, "Closing real endpoint connection line_id: %d, connection_id=%d, call_id: %d\n", p->line_id, sub->connection_id, sub->call_id);
+-			endpt_connection(p->line_id, sub->call_id, "destroy");
++			struct config_update_struct data = {
++				.cid = ast ? ast_channel_connected(ast)->id.number.str : NULL,
++				.is_incoming = sub->call_direction == INCOMING_CALL,
++			};
++
++			/* When the number did not match the dial plan and the call was not actually originated */
++			if (!data.cid && ast && sub->call_direction == OUTGOING_CALL) {
++				data.cid = ast_channel_exten(ast);
++			}
++			ast_debug(1, "Closing real endpoint connection line_id: %d, connection_id=%d, call_id: %d, cid: %s, direction %s\n",
++				p->line_id, sub->connection_id, sub->call_id, data.cid,
++				sub->call_direction == OUTGOING_CALL ? "outgoing" : "incoming");
++			endpt_connection_data(p->line_id, sub->call_id, "destroy",
++				(data.cid && sub->call_id) ? &data : NULL);
+ 		} else {
+ 			ast_debug(1, "Releasing connection for pvt line_id=%i connection_id=%d, call_id: %d\n",
+ 				sub->parent->line_id, sub->connection_id, sub->call_id);

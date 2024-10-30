@@ -1,0 +1,98 @@
+From 10e7a56f8275b592a9b258a123966b5a9a747917 Mon Sep 17 00:00:00 2001
+From: Marek Puzyniak <marek.puzyniak@iopsys.eu>
+Date: Tue, 14 May 2024 17:40:32 +0200
+Subject: [PATCH] broadcom: for assoc event send whole frame body
+
+Previously only information elements part of assoc frame
+was send as raw part of assoc event.
+
+Whole frame is needed even parameters like
+capability information,
+listen interval or
+current ap mac are not filled in.
+
+Signed-off-by: Marek Puzyniak <marek.puzyniak@iopsys.eu>
+---
+ modules/broadcom/wlctrl.c | 24 ++++++++++++++++++++----
+ 1 file changed, 20 insertions(+), 4 deletions(-)
+
+diff --git a/modules/broadcom/wlctrl.c b/modules/broadcom/wlctrl.c
+index 5cb2961..2c5a05c 100644
+--- a/modules/broadcom/wlctrl.c
++++ b/modules/broadcom/wlctrl.c
+@@ -3532,10 +3532,13 @@ static int bcmwl_event_handle(const char *ifname, bcm_event_t *event, int size,
+ 	char macaddr[18] = {0};
+ 	char raw[1024] = {0};
+ 	char *raw_ptr = &raw[0];
++	char *frame_body;
++
+ 	char event_name[128] = {0};
+ 	uint32_t event_type;
+ 	uint32_t datalen = 0;
+ 	uint32_t reason = -1;
++	uint32_t offset = 0; /* offset to store event data at proper place in frame body */
+ 
+ 	datalen = ntohl(event->event.datalen);
+ 	event_type = ntohl(event->event.event_type);
+@@ -3548,10 +3551,6 @@ static int bcmwl_event_handle(const char *ifname, bcm_event_t *event, int size,
+ 	if (WARN_ON(sizeof(*event) + datalen >= size))
+ 		return 0;
+ 
+-	/* Check if we have place for raw data */
+-	if (datalen * 2 < sizeof(raw))
+-		btostr((uint8_t *) (event + 1), datalen, raw);
+-
+ 	/* Fill macaddr */
+ 	snprintf(macaddr, sizeof(macaddr), MACSTR, MAC2STR(event->event.addr.octet)); /* Flawfinder: ignore */
+ 
+@@ -3570,10 +3569,14 @@ static int bcmwl_event_handle(const char *ifname, bcm_event_t *event, int size,
+ 		case WLC_E_ASSOC:
+ 		case WLC_E_ASSOC_IND:
+ 			snprintf(event_name, sizeof(event_name), "assoc");
++			/* placeholder for capability information + listen interval */
++			offset = 4;
+ 			break;
+ 		case WLC_E_REASSOC:
+ 		case WLC_E_REASSOC_IND:
+ 			snprintf(event_name, sizeof(event_name), "reassoc");
++			/* placeholder for capability information + listen interval + current ap mac*/
++			offset = 10;
+ 			break;
+ 		case WLC_E_AUTH:
+ 		case WLC_E_AUTH_IND:
+@@ -3593,6 +3596,12 @@ static int bcmwl_event_handle(const char *ifname, bcm_event_t *event, int size,
+ 			return -1;
+ 	}
+ 
++	frame_body = calloc(1, datalen + offset);
++	if (!frame_body)
++		return -1;
++
++	memcpy(frame_body + offset, (uint8_t *) (event + 1), datalen);
++
+ 	snprintf(buf, buf_size,
+ 		 "wifi.sta '{\"ifname\":\"%s\", \"event\":\"%s\", \"data\":{\"macaddr\":\"%s\"",
+ 		 event->event.ifname, event_name, macaddr);
+@@ -3600,12 +3609,19 @@ static int bcmwl_event_handle(const char *ifname, bcm_event_t *event, int size,
+ 	if (reason != -1)
+ 		snprintf(buf + strlen(buf), buf_size, ", \"reason\":%u", reason);
+ 
++	/* Check if we have place for raw data otherwise skip raw data */
++	if ((datalen * 2 + offset) < buf_size)
++		btostr((uint8_t *)frame_body, datalen + offset, raw);
++	else
++		datalen = 0;
+ 
+ 	if (datalen > 0)
+ 		snprintf(buf + strlen(buf), buf_size, ", \"raw\":\"%s\"", raw_ptr);
+ 
+ 	snprintf(buf + strlen(buf), buf_size, "%s", "}}'");
+ 
++	free(frame_body);
++
+ 	return 0;
+ }
+ 
+-- 
+2.34.1
+

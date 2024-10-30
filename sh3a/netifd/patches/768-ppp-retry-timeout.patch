@@ -110,7 +110,7 @@ diff -aur a/proto-shell.c b/proto-shell.c
  
 -	ret = netifd_start_process(argv, envp, proc);
 +	if(!strcmp(proto->iface->name, IFACE_NAME_WAN) && !strcmp(action, "setup")){
-+		int n = uloop_timeout_remaining(&state->proto_retry_timeout);
++		int n = uloop_timeout_remaining64(&state->proto_retry_timeout);
 +		netifd_log_message(L_DEBUG, "%s:%d Remaining msec = %d", __func__, __LINE__, n);
 +		
 +		if(n == -1){

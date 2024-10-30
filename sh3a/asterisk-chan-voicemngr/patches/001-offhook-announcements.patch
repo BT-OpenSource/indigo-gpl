@@ -1,0 +1,175 @@
+--- a/src/channels/chan_voicemngr.c
++++ b/src/channels/chan_voicemngr.c
+@@ -154,6 +154,11 @@ static struct ast_jb_conf default_jbconf
+ static const char tdesc[] = "Voice SLIC Driver";
+ static const char config[] = "chan_telephony.conf";
+ static const char broadcast_path[] = "voice.line";
++static const char *internet_path[] = {
++	"network.interface.wan", // Fixed  WAN interface
++	"network.interface.lte", // Mobile WAN interface
++	NULL
++};
+ static channel_settings channel_config[MAX_NUM_LINEID];
+ static struct line_stats_t line_stats[MAX_SIP_CLIENTS];
+ static int sip_line_callmode[MAX_SIP_CLIENTS] = {[0 ... MAX_SIP_CLIENTS-1] = LINE_CALL_MODE_MULTIPLE};
+@@ -238,12 +243,27 @@ static char lineCallStatus[16];
+ int dtmf_wait_timer = 2000; /*Time to wait for dtmf(for R4 call setup) before setting up a conference call*/
+ #define RTP_DTMF_SIZE 4
+ 
++static bool internet_connection = false;
++
+ enum {
+ 	EVENT_TYPE,
+ 	EVENT_LINE_ID,
+ 	__EVENT_MAX,
+ };
+ 
++enum {
++	INTERNET_STATUS,
++	__INTERNET_ARR_MAX,
++};
++
++static const struct blobmsg_policy network_interface_policy[] = {
++	[INTERNET_STATUS] = {
++		.name = "up",
++		.type = BLOBMSG_TYPE_BOOL
++	},
++};
++
++
+ #define MAX_CONTEXTS 10
+ typedef struct shared_context {
+ 	struct ubus_context *ctx;
+@@ -3396,6 +3416,63 @@ static int has_call_in_sip_client(const
+ 	return call_cli_command(cmd, &check_endpoint_state_in_use, NULL);
+ }
+ 
++static void chan_voicemngr_play_announcement(struct chan_voicemngr_pvt *p, const char *announce_type) {
++	struct chan_voicemngr_subchannel *sub = chan_voicemngr_get_active_subchannel(p);
++
++	if(!sub) {
++		ast_debug(9, "Unable to find active subchannel\n");
++		return;
++	}
++
++	/* Start the pbx */
++	if (!sub->connection_init) {
++		sub->connection_id = ast_atomic_fetchadd_int((int *)&current_connection_id, +1);
++		chan_voicemngr_create_connection(sub);
++	}
++
++	chan_voicemngr_new(sub, AST_STATE_RING, "0", announce_type, NULL, NULL, NULL);
++}
++
++static void network_interface_get_status_cb(struct ubus_request *req, int type, struct blob_attr *msg) {
++
++	struct blob_attr *tb[__INTERNET_ARR_MAX];
++	blobmsg_parse(network_interface_policy, __INTERNET_ARR_MAX, tb, blob_data(msg), blob_len(msg));
++
++	if (tb[INTERNET_STATUS] && blobmsg_get_bool(tb[INTERNET_STATUS]))
++		internet_connection = true;
++	else
++		internet_connection = false;
++}
++
++/* ubus call network.interface.wan status */
++static int check_internet_status(const char *path) {
++	struct ubus_context *local_ctx;
++	struct blob_buf bb;
++	uint32_t id;
++
++	ast_log(LOG_DEBUG, "ubus call %s status\n", path);
++
++	local_ctx = ubus_connect(NULL);
++
++	if (!local_ctx) {
++		ast_log(LOG_ERROR, "%s(): ubus_connect() failed\n", __func__);
++		return -1;
++	}
++
++	ubus_lookup_id(local_ctx, path, &id);
++	if(!id)
++		return -1;
++
++	memset(&bb, 0, sizeof(bb));
++	blob_buf_init(&bb, 0);
++	int ret = ubus_invoke(local_ctx, id, "status", bb.head, network_interface_get_status_cb, NULL, 2000);
++	blob_buf_free(&bb);
++	ubus_free(local_ctx);
++
++	return (ret == UBUS_STATUS_OK ? 0 : -1);
++}
++
++
+ static int check_is_sip_account_registered(const char *line, const char *sip_account)
+ {
+ 	/* The example output of the command is shown below.
+@@ -3529,6 +3606,14 @@ static void chan_voicemngr_process_event
+ 			p->dtmfbuf[p->dtmf_len] = '\0';
+ 			sub->channel_state = OFFHOOK;
+ 
++			for (int i=0; internet_path[i]; i++) {
++				if(check_internet_status(internet_path[i])) {
++					ast_log(LOG_ERROR, "UBUS call %s failed for internet check!\n", internet_path[i]);
++				} else if (internet_connection) {
++					break;
++				}
++			}
++
+ 			if (owner) {
+ 				if (!sub->connection_init) {
+ 					ast_debug(9, "create_connection()\n");
+@@ -3568,25 +3653,36 @@ static void chan_voicemngr_process_event
+ 				chan_voicemngr_send_ubus_event("CALL_UNHOLD", p->line_id);
+ 			} else if (sub->channel_state == OFFHOOK) {
+ 				/* EVENT_OFFHOOK changed endpoint state to OFFHOOK, apply dialtone */
+-				if ( p->context[0] != '\0' && is_sip_account_registered(p->context)) {
+-					ast_debug(9, "Resetting dial tones.\n");
+-					channel_settings *s = &channel_config[p->line_id];
+-					p->dialtone = mwi_check(p->context) ? mwi_dialtone_state : DIALTONE_ON;
+-					chan_voicemngr_signal_dialtone(p);
+-					chan_voicemngr_send_ubus_event("DIALTONE_ON", p->line_id);
+-
+-					if (strlen(s->autodial_ext)) {
+-						/* Schedule autodial timeout if autodial extension is set */
+-						p->autodial_timer_id = ast_sched_add(sched, s->autodial_timeoutmsec, handle_autodial_timeout, p);
++				if ( p->context[0] != '\0' ) {
++					if (internet_connection && is_sip_account_registered(p->context)) {
++						ast_debug(9, "Resetting dial tones.\n");
++						channel_settings *s = &channel_config[p->line_id];
++						p->dialtone = mwi_check(p->context) ? mwi_dialtone_state : DIALTONE_ON;
++						chan_voicemngr_signal_dialtone(p);
++						chan_voicemngr_send_ubus_event("DIALTONE_ON", p->line_id);
++
++						if (strlen(s->autodial_ext)) {
++							/* Schedule autodial timeout if autodial extension is set */
++							p->autodial_timer_id = ast_sched_add(sched, s->autodial_timeoutmsec, handle_autodial_timeout, p);
++						} else {
++							/* No autodial, schedule dialtone timeout */
++							ast_verbose("Scheduling dialtone timeout in %dms\n", s->dialtone_timeoutmsec);
++							p->dialtone_timeout_timer_id = ast_sched_add(sched, s->dialtone_timeoutmsec, handle_dialtone_timeout, p);
++						}
+ 					} else {
+-						/* No autodial, schedule dialtone timeout */
+-						ast_verbose("Scheduling dialtone timeout in %dms\n", s->dialtone_timeoutmsec);
+-						p->dialtone_timeout_timer_id = ast_sched_add(sched, s->dialtone_timeoutmsec, handle_dialtone_timeout, p);
++						p->dialtone = DIALTONE_OFF;
++
++						if(internet_connection) {
++							ast_log(LOG_WARNING, "Internet connection exists but registration failed!!\n");
++							chan_voicemngr_play_announcement(p, "registration_fail");
++						}
++						else {
++							ast_log(LOG_WARNING, "Internet connection does not exist!!\n");
++							chan_voicemngr_play_announcement(p, "internet_down");
++						}
+ 					}
+-				} else {
+-					ast_debug(9, "OFFHOOK but SIP account not registered\n");
+-				}
+-			}
++ 				}
++ 			}
+ 			break;
+ 		}
+ 		case EVENT_ONHOOK: {

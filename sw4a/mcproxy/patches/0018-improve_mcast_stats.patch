@@ -1,0 +1,455 @@
+--- a/mcproxy/include/proxy/message_format.hpp
++++ b/mcproxy/include/proxy/message_format.hpp
+@@ -55,6 +55,7 @@ struct proxy_msg {
+         GENERAL_QUERY_TIMER_MSG,
+         CONFIG_MSG,
+         GROUP_RECORD_MSG,
++        DUMP_MULTICAST_MSG,
+         DEBUG_MSG
+     };
+ 
+@@ -79,6 +80,7 @@ struct proxy_msg {
+             {GENERAL_QUERY_TIMER_MSG,      "GENERAL_QUERY_TIMER_MSG"     },
+             {CONFIG_MSG,           "CONFIG_MSG"          },
+             {GROUP_RECORD_MSG,     "GROUP_RECORD_MSG"    },
++            {DUMP_MULTICAST_MSG,   "DUMP_MULTICAST_MSG"  },
+             {DEBUG_MSG,            "DEBUG_MSG"           }
+         };
+         return name_map[mt];
+@@ -275,6 +277,24 @@ struct debug_msg : public proxy_msg {
+ 
+ //------------------------------------------------------------------------
+ 
++struct dump_multicast_msg : public proxy_msg {
++    dump_multicast_msg(bool first_instance)
++        : proxy_msg(DUMP_MULTICAST_MSG, USER_INPUT)
++        , m_first_instance(first_instance) {
++        HC_LOG_TRACE("");
++    }
++
++    bool first_instance() const {
++        HC_LOG_TRACE("");
++        return m_first_instance;
++    }
++
++private:
++    bool m_first_instance;
++};
++
++//------------------------------------------------------------------------
++
+ struct source {
+     source() = default;
+     source(source&&) = default;
+@@ -324,13 +344,14 @@ struct group_record_msg : public proxy_m
+     //group_record_msg()
+     //: group_record_msg(0, MODE_IS_INCLUDE, addr_storage(), source_list<source>(), IGMPv3) {}
+ 
+-    group_record_msg(unsigned int if_index, mcast_addr_record_type record_type, const addr_storage& gaddr, source_list<source>&& slist, group_mem_protocol grp_mem_proto)
++    group_record_msg(unsigned int if_index, mcast_addr_record_type record_type, const addr_storage& gaddr, source_list<source>&& slist, group_mem_protocol grp_mem_proto, const addr_storage& host_addr = addr_storage())
+         : proxy_msg(GROUP_RECORD_MSG, LOSEABLE)
+         , m_if_index(if_index)
+         , m_record_type(record_type)
+         , m_gaddr(gaddr)
+         , m_slist(slist)
+-        , m_grp_mem_proto(grp_mem_proto){}
++        , m_grp_mem_proto(grp_mem_proto)
++        , m_host_addr(host_addr){}
+ 
+     friend std::ostream& operator<<(std::ostream& stream, const group_record_msg& r) {
+         return stream << r.to_string();
+@@ -367,12 +388,17 @@ struct group_record_msg : public proxy_m
+         return m_grp_mem_proto;
+     }
+ 
++    const addr_storage& get_host_addr() {
++        return m_host_addr;
++    }
++
+ private:
+     unsigned int m_if_index;
+     mcast_addr_record_type m_record_type;
+     addr_storage m_gaddr;
+     source_list<source> m_slist;
+     group_mem_protocol m_grp_mem_proto;
++    addr_storage m_host_addr;
+ };
+ 
+ struct new_source_msg : public proxy_msg {
+--- a/mcproxy/include/proxy/proxy.hpp
++++ b/mcproxy/include/proxy/proxy.hpp
+@@ -47,7 +47,7 @@ class proxy_instance;
+ class proxy
+ {
+ private:
+-    static bool m_running;
++    static volatile bool m_running;
+ 
+     static std::exception_ptr m_worker_exception;
+     static std::string m_worker_exception_text;
+@@ -57,7 +57,7 @@ private:
+     bool m_print_proxy_status;
+     bool m_reset_rp_filter;
+     std::string m_config_path;
+-    static bool dump_stats;
++    static volatile bool dump_stats;
+ 
+     std::unique_ptr<configuration> m_configuration;
+     std::shared_ptr<timing> m_timing;
+--- a/mcproxy/include/proxy/proxy_instance.hpp
++++ b/mcproxy/include/proxy/proxy_instance.hpp
+@@ -114,7 +114,6 @@ private:
+ 
+     // linked list to store multicast entries
+     mutable struct mcast_stats *mc_stats;
+-    mutable std::mutex mc_stats_lock;
+ 
+     //init
+     bool init_mrt_socket();
+@@ -137,6 +136,18 @@ private:
+ 
+     std::string name() const override { return "proxy_instance " + m_instance_name; }
+ 
++    // Get file name for multicast entries dump
++    std::string dump_file_name() const;
++
++    // Function to add multicast entries in the mcast_entries
++    void add_multicast_entry(std::string device_name, addr_storage gaddr, addr_storage saddr) const;
++
++    // Function to remove multicast entries from the mcast_entries
++    void del_multicast_entry(std::string device_name, addr_storage gaddr, addr_storage saddr) const;
++
++    // Function to write multicast entries to a file
++    void dump_multicast_entries(bool first_instance) const;
++
+     // Function to delete all multicast entries
+     void erase_multicast_entries() const;
+ 
+@@ -171,15 +182,6 @@ public:
+      */
+     void finish() override;
+ 
+-    // Function to add multicast entries in the mcast_entries
+-    void add_multicast_entry(std::string device_name, addr_storage gaddr, addr_storage saddr) const;
+-
+-    // Function to remove multicast entries from the mcast_entries
+-    void del_multicast_entry(std::string device_name, addr_storage gaddr, addr_storage saddr) const;
+-
+-    // Function to write multicast entries to a file
+-    void dump_multicast_entries(bool first_instance) const;
+-
+     friend routing_management;
+     friend simple_mc_proxy_routing;
+     friend interface_memberships;
+--- a/mcproxy/include/proxy/querier.hpp
++++ b/mcproxy/include/proxy/querier.hpp
+@@ -110,6 +110,12 @@ public:
+     querier(worker* msg_worker, group_mem_protocol querier_version_mode, int if_index, const std::shared_ptr<const sender>& sender, const std::shared_ptr<timing>& timing, const timers_values& tv, callback_querier_state_change cb_state_change);
+ 
+     /**
++     * @brief Is group added to the memebership db of this querier.
++     * @param gaddr Group address
++     */
++    bool group_added(const addr_storage& gaddr) const;
++
++    /**
+      * @brief All received group records of the interface maintained by this querier musst be submitted to this function. 
+      * @param msg the reveived group record
+      */
+--- a/mcproxy/src/proxy/igmp_receiver.cpp
++++ b/mcproxy/src/proxy/igmp_receiver.cpp
+@@ -168,12 +168,10 @@ void igmp_receiver::analyse_packet(struc
+ 
+             if (igmp_hdr->igmp_type == IGMP_V2_MEMBERSHIP_REPORT) {
+                 HC_LOG_DEBUG("\treport received");
+-                m_proxy_instance->add_multicast_entry(interfaces::get_if_name(if_index), gaddr, saddr);
+-                m_proxy_instance->add_msg(std::make_shared<group_record_msg>(if_index, MODE_IS_EXCLUDE, gaddr, source_list<source>(), IGMPv2));
++                m_proxy_instance->add_msg(std::make_shared<group_record_msg>(if_index, MODE_IS_EXCLUDE, gaddr, source_list<source>(), IGMPv2, saddr));
+             } else if (igmp_hdr->igmp_type == IGMP_V2_LEAVE_GROUP) {
+                 HC_LOG_DEBUG("\tleave group received");
+-                m_proxy_instance->del_multicast_entry(interfaces::get_if_name(if_index), gaddr, saddr);
+-                m_proxy_instance->add_msg(std::make_shared<group_record_msg>(if_index, CHANGE_TO_INCLUDE_MODE, gaddr, source_list<source>(), IGMPv2));
++                m_proxy_instance->add_msg(std::make_shared<group_record_msg>(if_index, CHANGE_TO_INCLUDE_MODE, gaddr, source_list<source>(), IGMPv2, saddr));
+             } else {
+                 HC_LOG_ERROR("unkown igmp type: " << igmp_hdr->igmp_type);
+             }
+@@ -218,7 +216,7 @@ void igmp_receiver::analyse_packet(struc
+                 HC_LOG_DEBUG("\tgaddr: " << gaddr);
+                 HC_LOG_DEBUG("\tnumber of sources: " << slist.size());
+                 HC_LOG_DEBUG("\tsource_list: " << slist);
+-                m_proxy_instance->add_msg(std::make_shared<group_record_msg>(if_index, rec_type, gaddr, move(slist), IGMPv3));
++                m_proxy_instance->add_msg(std::make_shared<group_record_msg>(if_index, rec_type, gaddr, move(slist), IGMPv3, saddr));
+ 
+                 rec = reinterpret_cast<igmpv3_mc_record*>(reinterpret_cast<unsigned char*>(rec) + sizeof(igmpv3_mc_record) + nos * sizeof(in_addr) + aux_size);
+             }
+--- a/mcproxy/src/proxy/mld_receiver.cpp
++++ b/mcproxy/src/proxy/mld_receiver.cpp
+@@ -139,10 +139,10 @@ void mld_receiver::analyse_packet(struct
+ 
+         if (hdr->mld_type == MLD_LISTENER_REPORT) {
+             HC_LOG_DEBUG("\treport received");
+-            m_proxy_instance->add_msg(std::make_shared<group_record_msg>(if_index, MODE_IS_EXCLUDE, gaddr, source_list<source>(), MLDv1));
++            m_proxy_instance->add_msg(std::make_shared<group_record_msg>(if_index, MODE_IS_EXCLUDE, gaddr, source_list<source>(), MLDv1, addr_storage(packet_info->ipi6_addr)));
+         } else if (hdr->mld_type == MLD_LISTENER_REDUCTION) {
+             HC_LOG_DEBUG("\tlistener reduction received");
+-            m_proxy_instance->add_msg(std::make_shared<group_record_msg>(if_index, CHANGE_TO_INCLUDE_MODE, gaddr, source_list<source>(), MLDv1));
++            m_proxy_instance->add_msg(std::make_shared<group_record_msg>(if_index, CHANGE_TO_INCLUDE_MODE, gaddr, source_list<source>(), MLDv1, addr_storage(packet_info->ipi6_addr)));
+         } else {
+             HC_LOG_ERROR("unkown mld type: " << hdr->mld_type);
+         }
+@@ -192,7 +192,7 @@ void mld_receiver::analyse_packet(struct
+             HC_LOG_DEBUG("\tgaddr: " << gaddr);
+             HC_LOG_DEBUG("\tnumber of sources: " << slist.size());
+             HC_LOG_DEBUG("\tsource_list: " << slist);
+-            m_proxy_instance->add_msg(std::make_shared<group_record_msg>(if_index, rec_type, gaddr, move(slist), MLDv2));
++            m_proxy_instance->add_msg(std::make_shared<group_record_msg>(if_index, rec_type, gaddr, move(slist), MLDv2, addr_storage(packet_info->ipi6_addr)));
+ 
+             rec = reinterpret_cast<mldv2_mc_record*>(reinterpret_cast<unsigned char*>(rec) + sizeof(mldv2_mc_record) + nos * sizeof(in6_addr) + aux_size);
+         }
+--- a/mcproxy/src/proxy/proxy.cpp
++++ b/mcproxy/src/proxy/proxy.cpp
+@@ -37,8 +37,8 @@
+ #include <signal.h>
+ #include <unistd.h>
+ 
+-bool proxy::m_running = false;
+-bool proxy::dump_stats = false;
++volatile bool proxy::m_running = false;
++volatile bool proxy::dump_stats = false;
+ 
+ std::exception_ptr proxy::m_worker_exception = nullptr;
+ std::string proxy::m_worker_exception_text;
+@@ -316,20 +316,22 @@ void proxy::start()
+     }
+ 
+     while (m_running) {
+-
+-        if (m_print_proxy_status) {
+-            for (auto & e : m_proxy_instances) {
+-                e.second->add_msg(std::make_shared<debug_msg>());
+-                sleep(2);
+-            }
+-        } else if (dump_stats) {
++        if (dump_stats) {
+             /* Resetting the dump_stats flag since signal is received */
+             dump_stats = false;
+             bool first_instance = true;
+             for (auto & e : m_proxy_instances) {
+-                e.second->dump_multicast_entries(first_instance);
++                e.second->add_msg(std::make_shared<dump_multicast_msg>(first_instance));
+                 first_instance = false;
+             }
++            continue;
++        }
++
++        if (m_print_proxy_status) {
++            for (auto & e : m_proxy_instances) {
++                e.second->add_msg(std::make_shared<debug_msg>());
++                sleep(2);
++            }
+         } else {
+             sleep(2);
+         }
+--- a/mcproxy/src/proxy/proxy_instance.cpp
++++ b/mcproxy/src/proxy/proxy_instance.cpp
+@@ -146,7 +146,7 @@ static void update_mdb_entry(int ifindex
+ }
+ 
+ static void br_update_mdb_entry(int ifindex, struct rtattr *attr,
+-                                struct nlmsghdr *n, struct mcast_stats *mc_stats)
++                                struct mcast_stats *mc_stats)
+ {
+     struct rtattr *etb[MDBA_MDB_EATTR_MAX + 1];
+     struct br_mdb_entry *e;
+@@ -193,7 +193,7 @@ static int update_time_from_mdb(struct n
+             struct rtattr *i;
+ 
+         for (i = (struct rtattr *)RTA_DATA(tb[MDBA_MDB]); RTA_OK(i, rem); i = RTA_NEXT(i, rem))
+-            br_update_mdb_entry(r->ifindex, i, n, mc_stats);
++            br_update_mdb_entry(r->ifindex, i, mc_stats);
+     }
+     return 0;
+ }
+@@ -330,7 +330,7 @@ int update_mac_addr_mc_stats(struct mcas
+     int buf_size = status;
+ 
+     /* set p to start of an answer */
+-    void *p = (void *) buf;
++    uint8_t *p = (uint8_t *) buf;
+     while (buf_size > 0) {
+         char ip[INET6_ADDRSTRLEN] = {0};
+         char mac[18] = {0};
+@@ -563,9 +563,27 @@ void proxy_instance::worker_thread()
+                 {
+                     it->second.m_querier->receive_record(msg);
+                 }
++
++                // Sync multicast entries list with querier's memebership db
++                if (it->second.m_querier->group_added(gr->get_gaddr())) {
++                    add_multicast_entry(interfaces::get_if_name(gr->get_if_index()),
++                                        gr->get_gaddr(), gr->get_host_addr());
++                } else {
++                    del_multicast_entry(interfaces::get_if_name(gr->get_if_index()),
++                                        gr->get_gaddr(), gr->get_host_addr());
++                }
+             } else {
+                 HC_LOG_DEBUG("failed to find querier of interface: " << interfaces::get_if_name( gr->get_if_index() ));
+             }
++
++            // mcproxy can't track particular clients
++            // when the host sends an explicit LEAVE-like report - delete it
++            if (((gr->get_record_type() == MODE_IS_INCLUDE)
++              || (gr->get_record_type() == CHANGE_TO_INCLUDE_MODE))
++             && (gr->get_slist().empty())) {
++                del_multicast_entry(interfaces::get_if_name(gr->get_if_index()),
++                                    gr->get_gaddr(), gr->get_host_addr());
++            }
+ 		}
+         break;
+         case proxy_msg::NEW_SOURCE_MSG: {
+@@ -600,6 +618,9 @@ void proxy_instance::worker_thread()
+         case proxy_msg::NEW_SOURCE_TIMER_MSG:
+             m_routing_management->timer_triggerd_maintain_routing_table(msg);
+             break;
++        case proxy_msg::DUMP_MULTICAST_MSG:
++            dump_multicast_entries(std::static_pointer_cast<dump_multicast_msg>(msg)->first_instance());
++            break;
+         case proxy_msg::DEBUG_MSG:
+             std::cout << *this << std::endl;
+             std::cout << std::endl;
+@@ -802,13 +823,17 @@ bool proxy_instance::is_downstream(unsig
+ // Function to add multicast entries in the mcast_entries
+ void proxy_instance::add_multicast_entry(std::string device_name, addr_storage gaddr, addr_storage saddr) const
+ {
+-    std::lock_guard<std::mutex> lock(mc_stats_lock);
++    HC_LOG_TRACE("");
+ 
+     /* Device port, mac address and time will be updated once information is available
+        from arp table, bridge mdb and fdb tables */
+ 
+-    // Filter multicast address from multicast stats
+-    if (gaddr.to_string() == IPV4_ALL_IGMP_ROUTERS_ADDR || gaddr.to_string() == IPV4_IGMPV3_ADDR) {
++    // Filter multicast router service groups from multicast stats
++    if (gaddr.to_string() == IPV4_ALL_IGMP_ROUTERS_ADDR
++     || gaddr.to_string() == IPV4_IGMPV3_ADDR
++     || gaddr.to_string() == IPV6_ALL_NODE_LOCAL_ROUTER
++     || gaddr.to_string() == IPV6_ALL_SITE_LOCAL_ROUTER
++     || gaddr.to_string() == IPV6_ALL_MLDv2_CAPABLE_ROUTERS) {
+         return;
+     }
+ 
+@@ -840,7 +865,7 @@ void proxy_instance::add_multicast_entry
+ // Function to remove multicast entries from the mcast_entries
+ void proxy_instance::del_multicast_entry(std::string device_name, addr_storage gaddr, addr_storage saddr) const
+ {
+-    std::lock_guard<std::mutex> lock(mc_stats_lock);
++    HC_LOG_TRACE("");
+ 
+     struct mcast_stats *temp = mc_stats, *prev = mc_stats;
+ 
+@@ -864,25 +889,61 @@ void proxy_instance::del_multicast_entry
+ }
+ 
+ // Function to write multicast entries to a file
+-void proxy_instance::dump_multicast_entries(bool first_instance) const
++std::string proxy_instance::dump_file_name() const
+ {
+-    std::lock_guard<std::mutex> lock(mc_stats_lock);
+-
+-    /* In case there are no entries in list, an empty file must be created */
+-    struct mcast_stats *temp = mc_stats;
+-    std::string file_name = "/tmp/igmp_snooping_stats";
++    HC_LOG_TRACE("");
+ 
+     if (is_IPv6(m_group_mem_protocol))
+-        file_name = "/tmp/mld_snooping_stats";
++        return "/tmp/mld_snooping_stats";
++    return "/tmp/igmp_snooping_stats";
++}
++
++// Function to write multicast entries to a file
++void proxy_instance::dump_multicast_entries(bool first_instance) const
++{
++    HC_LOG_TRACE("");
+ 
++    /* In case there are no entries in list, an empty file must be created */
+     std::ofstream stats_file;
+-    stats_file.open(file_name, first_instance ? std::ios_base::trunc : std::ios_base::app);
++    stats_file.open(dump_file_name(), first_instance ? std::ios_base::trunc : std::ios_base::app);
+ 
+     if (!stats_file) {
+-        HC_LOG_ERROR("Error: file" + file_name +" could not be opened");
++        HC_LOG_ERROR("Error: file " + dump_file_name() +" could not be opened");
+         return;
+     }
+ 
++    /* Sync with querier's memebership db */
++    struct mcast_stats *temp = mc_stats;
++    struct mcast_stats *prev = mc_stats;
++    while (temp != NULL) {
++        bool group_found = false;
++        for (auto & it : m_downstreams) {
++            if (it.second.m_querier->group_added(temp->gaddr)) {
++                group_found = true;
++                break;
++            }
++        }
++
++        if (group_found) {
++            prev = temp;
++            temp = temp->next;
++            continue;
++        }
++
++        if (temp == mc_stats) {
++            mc_stats = temp->next;
++        }
++        if (temp == prev) {
++            prev = temp->next;
++            delete temp;
++            temp = prev;
++        } else {
++            prev->next = temp->next;
++            delete temp;
++            temp = prev->next;
++        }
++    }
++
+     /* Checking if multicast group info is available */
+     if (mc_stats == NULL)
+         return;
+@@ -900,6 +961,7 @@ void proxy_instance::dump_multicast_entr
+         return;
+ 
+     /* Condition to check if write_to_file is true and data exits with valid time */
++    temp = mc_stats;
+     while (temp != NULL) {
+         stats_file << temp->device_name << " " << temp->gaddr << " " << temp->saddr << " ";
+         stats_file << temp->port_name << " " << temp->time << std::endl;
+@@ -910,7 +972,11 @@ void proxy_instance::dump_multicast_entr
+ // Function to delete all multicast entries
+ void proxy_instance::erase_multicast_entries() const
+ {
+-    std::lock_guard<std::mutex> lock(mc_stats_lock);
++    HC_LOG_TRACE("");
++
++    // Clean dump file
++    std::ofstream stats_file;
++    stats_file.open(dump_file_name(), std::ios_base::trunc);
+ 
+     struct mcast_stats *temp = mc_stats;
+     struct mcast_stats *next = NULL;
+--- a/mcproxy/src/proxy/querier.cpp
++++ b/mcproxy/src/proxy/querier.cpp
+@@ -150,6 +150,11 @@ bool querier::send_general_query()
+     return m_sender->send_general_query(m_if_index, m_timers_values);
+ }
+ 
++bool querier::group_added(const addr_storage& gaddr) const
++{
++    return m_db.group_info.find(gaddr) != end(m_db.group_info);
++}
++
+ void querier::receive_record(const std::shared_ptr<proxy_msg>& msg)
+ {
+     HC_LOG_TRACE("");

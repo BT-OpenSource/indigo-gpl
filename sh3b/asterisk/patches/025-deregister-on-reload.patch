@@ -1,9 +1,7 @@
-Index: asterisk-18.4.0/res/res_pjsip_outbound_registration.c
-===================================================================
---- asterisk-18.4.0.orig/res/res_pjsip_outbound_registration.c
-+++ asterisk-18.4.0/res/res_pjsip_outbound_registration.c
-@@ -407,6 +407,8 @@ struct sip_outbound_registration_client_
- 	unsigned int is494;
+--- a/res/res_pjsip_outbound_registration.c
++++ b/res/res_pjsip_outbound_registration.c
+@@ -453,6 +453,8 @@ struct sip_outbound_registration_client_
+ 	unsigned int registration_expires;
  	/*! \brief Last successful registration time (seconds since unix epoch) */
  	unsigned int last_successful_registration;
 +	/*! \brief Request for which the response was received with authorization header */
@@ -11,7 +9,7 @@ Index: asterisk-18.4.0/res/res_pjsip_outbound_registration.c
  };
  
  /*! \brief Outbound registration state information (persists for lifetime that registration should exist) */
-@@ -430,6 +432,9 @@ static AO2_GLOBAL_OBJ_STATIC(current_sta
+@@ -476,6 +478,9 @@ static AO2_GLOBAL_OBJ_STATIC(current_sta
  /*! subscription id for network change events */
  static struct stasis_subscription *network_change_sub;
  
@@ -21,7 +19,7 @@ Index: asterisk-18.4.0/res/res_pjsip_outbound_registration.c
  /*! \brief hashing function for state objects */
  static int registration_state_hash(const void *obj, const int flags)
  {
-@@ -679,6 +684,43 @@ static int add_configured_supported_head
+@@ -850,6 +855,43 @@ static int add_configured_supported_head
  	return 1;
  }
  
@@ -51,9 +49,9 @@ Index: asterisk-18.4.0/res/res_pjsip_outbound_registration.c
 +				return;
 +			}
 +
-+			if(!AST_LIST_EMPTY(&endpoint->security_mechanisms)) {
++			if(!AST_LIST_EMPTY(&endpoint->secur_mechanisms)) {
 +				struct security_mechanism *sec_mechanism;
-+				AST_LIST_TRAVERSE(&endpoint->security_mechanisms, sec_mechanism, entry) {
++				AST_LIST_TRAVERSE(&endpoint->secur_mechanisms, sec_mechanism, entry) {
 +					ast_debug(1, "Adding security header: %s\n", sec_mechanism->value);
 +					ast_sip_add_header(tdata,"Security-Verify",sec_mechanism->value);
 +				}
@@ -65,7 +63,7 @@ Index: asterisk-18.4.0/res/res_pjsip_outbound_registration.c
  /*! \brief Callback function for registering */
  static int handle_client_registration(void *data)
  {
-@@ -687,6 +729,7 @@ static int handle_client_registration(vo
+@@ -858,6 +900,7 @@ static int handle_client_registration(vo
  
  	if (set_outbound_initial_authentication_credentials(client_state->client, &client_state->outbound_auths)) {
  		ast_log(LOG_WARNING, "Failed to set initial authentication credentials\n");
@@ -73,7 +71,7 @@ Index: asterisk-18.4.0/res/res_pjsip_outbound_registration.c
  	}
  
  	if (client_state->status == SIP_REGISTRATION_STOPPED
-@@ -709,40 +752,61 @@ static int handle_client_registration(vo
+@@ -880,41 +923,62 @@ static int handle_client_registration(vo
  		return -1;
  	}
  
@@ -100,9 +98,9 @@ Index: asterisk-18.4.0/res/res_pjsip_outbound_registration.c
 -			ast_sip_add_header(tdata,"Require","mediasec");
 +	registration_client_send(client_state, tdata);
  
--			if(!AST_LIST_EMPTY(&endpoint->security_mechanisms)) {
+-			if(!AST_LIST_EMPTY(&endpoint->secur_mechanisms)) {
 -				struct security_mechanism *sec_mechanism;
--				AST_LIST_TRAVERSE(&endpoint->security_mechanisms, sec_mechanism, entry) {
+-				AST_LIST_TRAVERSE(&endpoint->secur_mechanisms, sec_mechanism, entry) {
 -					ast_debug(1, "Adding security header: %s\n", sec_mechanism->value);
 -					ast_sip_add_header(tdata,"Security-Verify",sec_mechanism->value);
 -				}
@@ -124,25 +122,26 @@ Index: asterisk-18.4.0/res/res_pjsip_outbound_registration.c
 +	if (client_state->status == SIP_REGISTRATION_STOPPED
 +		|| pjsip_regc_unregister(client_state->client, &tdata) != PJ_SUCCESS) {
 +		return 0;
- 	}
- 
--	registration_client_send(client_state, tdata);
++ 	}
++ 
 +	if (!add_configured_supported_headers(client_state, tdata)) {
 +		ast_log(LOG_WARNING, "Failed to set supported headers\n");
 +		return -1;
-+	}
+ 	}
 +	pjsip_authorization_hdr *auth_header = NULL;
- 
++ 
 +	if(client_state->last_request)
 +		auth_header = (pjsip_authorization_hdr*)pjsip_msg_find_hdr(client_state->last_request->msg, PJSIP_H_AUTHORIZATION, NULL);
-+
+ 
+-	registration_client_send(client_state, tdata);
 +	if(auth_header){
 +		pjsip_msg_add_hdr(tdata->msg, (pjsip_authorization_hdr *)auth_header);
 +	}
 +	else {
 +		ast_log(LOG_ERROR, "Failed to add authorization header!\n");
 +	}
-+
+ 
+-	return 0;
 +	/*
 +	 * Check mediasec state / existing mediasec headers in 'tdata->msg'
 +	 * and add default mediasec headers & stored (if any) 
@@ -161,10 +160,11 @@ Index: asterisk-18.4.0/res/res_pjsip_outbound_registration.c
 +	 */
 +	clear_endpoint_security_mechanisms(client_state);
 +	ast_sip_auth_vector_destroy(&client_state->outbound_auths);
- 	return 0;
++ 	return 0;
  }
  
-@@ -850,9 +914,7 @@ static int handle_client_state_destructi
+ /*! \brief Timer callback function, used just for registrations */
+@@ -1022,9 +1086,7 @@ static int handle_client_state_destructi
  
  			update_client_state_status(client_state, SIP_REGISTRATION_STOPPING);
  			client_state->destroy = 1;
@@ -175,7 +175,7 @@ Index: asterisk-18.4.0/res/res_pjsip_outbound_registration.c
  				ao2_ref(client_state, -1);
  				return 0;
  			}
-@@ -1099,12 +1161,21 @@ static void save_response_fields_to_tran
+@@ -1304,12 +1366,21 @@ static void save_response_fields_to_tran
  }
  
  /*! \brief Free any endpoint security mechanisms that have been stored */
@@ -183,6 +183,9 @@ Index: asterisk-18.4.0/res/res_pjsip_outbound_registration.c
 +static void clear_endpoint_security_mechanisms(struct sip_outbound_registration_client_state *client_state)
  {
 -	struct security_mechanism *sec_mechanism;
+-
+-	while ((sec_mechanism = AST_LIST_REMOVE_HEAD(&endpoint->secur_mechanisms, entry))) {
+-		ast_free(sec_mechanism);
 +	if (client_state->mediasec) {
 +		struct security_mechanism *sec_mechanism;
 +		struct ast_sip_endpoint *endpoint = ast_sorcery_retrieve_by_id(ast_sip_get_sorcery(), "endpoint",
@@ -192,16 +195,14 @@ Index: asterisk-18.4.0/res/res_pjsip_outbound_registration.c
 +			ast_log(LOG_ERROR, "No endpoint found!\n");
 +			return;
 +		}
- 
--	while ((sec_mechanism = AST_LIST_REMOVE_HEAD(&endpoint->security_mechanisms, entry))) {
--		ast_free(sec_mechanism);
-+		while ((sec_mechanism = AST_LIST_REMOVE_HEAD(&endpoint->security_mechanisms, entry))) {
++ 
++		while ((sec_mechanism = AST_LIST_REMOVE_HEAD(&endpoint->secur_mechanisms, entry))) {
 +			ast_free(sec_mechanism);
 +		}
  	}
  }
  
-@@ -1198,7 +1269,7 @@ static int handle_registration_response(
+@@ -1433,7 +1504,7 @@ static int handle_registration_response(
  					sec_mechanism = ast_calloc(1, sizeof(*sec_mechanism) + pj_strlen(&secSrv->hvalue));
  					if (!sec_mechanism) {
  						ast_log(LOG_ERROR, "Unable to store server security mechanisms\n");
@@ -210,7 +211,7 @@ Index: asterisk-18.4.0/res/res_pjsip_outbound_registration.c
  						return -1;
  					}
  					ast_copy_pj_str(&sec_mechanism->value, &secSrv->hvalue, pj_strlen(&secSrv->hvalue) + 1);
-@@ -1233,23 +1304,13 @@ static int handle_registration_response(
+@@ -1512,23 +1583,13 @@ static int handle_registration_response(
  			ast_debug(1, "Sending authenticated REGISTER to server '%s' from client '%s'\n",
  					server_uri, client_uri);
  
@@ -223,9 +224,9 @@ Index: asterisk-18.4.0/res/res_pjsip_outbound_registration.c
 -					ast_log(LOG_ERROR, "No endpoint found to store/add mediasec headers\n");
 -					return -1;
 -				}
--				if(!AST_LIST_EMPTY(&endpoint->security_mechanisms)) {
+-				if(!AST_LIST_EMPTY(&endpoint->secur_mechanisms)) {
 -					struct security_mechanism *sec_mechanism;
--					AST_LIST_TRAVERSE(&endpoint->security_mechanisms, sec_mechanism, entry) {
+-					AST_LIST_TRAVERSE(&endpoint->secur_mechanisms, sec_mechanism, entry) {
 -						ast_debug(1, "Adding security header: %s\n", sec_mechanism->value);
 -						ast_sip_add_header(tdata,"Security-Verify",sec_mechanism->value);
 -					}
@@ -240,23 +241,31 @@ Index: asterisk-18.4.0/res/res_pjsip_outbound_registration.c
 +			update_mediasec_headers(response->client_state, tdata);
  
  			pjsip_tx_data_add_ref(tdata);
- 			res = registration_client_send(response->client_state, tdata);
-@@ -1270,13 +1331,11 @@ static int handle_registration_response(
+ 
+@@ -1550,8 +1550,6 @@ static int handle_registration_response(
  		/* Otherwise, fall through so the failure is processed appropriately */
  	}
  
 -	response->client_state->auth_attempted = 0;
- 
- 	if (PJSIP_IS_STATUS_IN_CLASS(response->code, 200)) {
- 		/* Check if this is in regards to registering or unregistering */
-+        response->client_state->is494 = 0;
- 		if (response->expiration) {
 -
+ 	if (PJSIP_IS_STATUS_IN_CLASS(response->code, 200)) {
+ 		/* Check if this is in regards to registering or unregistering
+ 		 * Retrieve the requested expiration if possible,
+@@ -1559,12 +1557,12 @@ static int handle_registration_response(
+ 		 * Expiration was provided using the Expires header */
+ 		pjsip_expires_hdr *expires;
+ 		int exp_expiration = response->expiration;
++		response->client_state->is494=0;
+ 		if(response->old_request && (expires = pjsip_msg_find_hdr(response->old_request->msg, PJSIP_H_EXPIRES, NULL))){
+ 			exp_expiration = expires->ivalue;
+ 		}
+ 		if (exp_expiration && response->expiration) {
+ 
 -			response->client_state->is494=0;
  			/* If the registration went fine simply reschedule registration for the future */
  			ast_debug(1, "Outbound registration to '%s' with client '%s' successful\n", server_uri, client_uri);
  			update_client_state_status(response->client_state, SIP_REGISTRATION_REGISTERED);
-@@ -1286,12 +1345,21 @@ static int handle_registration_response(
+@@ -1566,6 +1625,16 @@ static int handle_registration_response(
  
  			response->client_state->last_successful_registration = time(NULL);
  
@@ -271,15 +280,17 @@ Index: asterisk-18.4.0/res/res_pjsip_outbound_registration.c
 +			}
 +
  			/* See if we should monitor for transport shutdown */
- 			registration_transport_monitor_setup(response->rdata->tp_info.transport,
- 				response->client_state->registration_name);
- 		} else {
- 			ast_debug(1, "Outbound unregistration to '%s' with client '%s' successful\n", server_uri, client_uri);
+ 			if (PJSIP_TRANSPORT_IS_RELIABLE(response->rdata->tp_info.transport)) {
+ 				registration_transport_monitor_setup(response->transport_key,
+@@ -1587,7 +1585,6 @@ static int handle_registration_response(
+ 				// case2: registration request with non-zero expiration but got expiration=0 in response
+ 				ast_debug(1, "Outbound registration/unregistration to '%s' with client '%s' failed, expiration not valid\n", server_uri, client_uri);
+ 			}
 -			response->client_state->is494=0;
  			update_client_state_status(response->client_state, SIP_REGISTRATION_UNREGISTERED);
  			sip_outbound_registration_send_ubus_event("UNREGISTERED",response->expiration,client_uri);
- 			ast_sip_transport_monitor_unregister(response->rdata->tp_info.transport,
-@@ -1378,11 +1378,9 @@ static int handle_registration_response(void *data)
+ 			if (PJSIP_TRANSPORT_IS_RELIABLE(response->rdata->tp_info.transport)) {
+@@ -1598,11 +1666,9 @@ static int handle_registration_response(
  			/* 494 loop detected! This is fatal! */
  			update_client_state_status(response->client_state, SIP_REGISTRATION_REJECTED_PERMANENT);
  			sip_outbound_registration_send_ubus_event("UNREGISTERED",response->expiration,client_uri);
@@ -292,7 +303,7 @@ Index: asterisk-18.4.0/res/res_pjsip_outbound_registration.c
  			ao2_ref(response->client_state, +1);
  			handle_client_registration(response->client_state);
  			ao2_ref(response, -1);
-@@ -1363,6 +1429,9 @@ static int handle_registration_response(
+@@ -1657,6 +1723,9 @@ static int handle_registration_response(
  		}
  	}
  
@@ -302,7 +313,7 @@ Index: asterisk-18.4.0/res/res_pjsip_outbound_registration.c
  	ast_system_publish_registry("PJSIP", client_uri, server_uri,
  		sip_outbound_registration_status_str(response->client_state->status), NULL);
  
-@@ -1481,6 +1550,9 @@ static void sip_outbound_registration_cl
+@@ -1806,6 +1875,9 @@ static void sip_outbound_registration_cl
  	if (client_state->last_tdata) {
  		pjsip_tx_data_dec_ref(client_state->last_tdata);
  	}
@@ -312,7 +323,7 @@ Index: asterisk-18.4.0/res/res_pjsip_outbound_registration.c
  }
  
  /*! \brief Allocator function for registration state */
-@@ -2034,29 +2106,16 @@ static int outbound_auths_to_var_list(co
+@@ -2403,29 +2475,16 @@ static int outbound_auths_to_var_list(co
  
  static int unregister_task(void *obj)
  {
@@ -348,10 +359,10 @@ Index: asterisk-18.4.0/res/res_pjsip_outbound_registration.c
  
  	ao2_ref(state, -1);
  	return 0;
-@@ -2470,7 +2529,7 @@ static int cli_print_body(void *obj, voi
- 			? AST_VECTOR_GET(&registration->outbound_auths, 0)
+@@ -2842,7 +2901,7 @@ static int cli_print_body(void *obj, voi
  			: "n/a",
  		(state ? sip_outbound_registration_status_str(state->client_state->status) : "Unregistered"),
+ 		state ? " (exp. " : "", abs(expsecs), state ? (expsecs < 0 ? "s ago)" : "s)") : "",
 -		state->client_state->last_successful_registration);
 +		(state ? state->client_state->last_successful_registration : 0));
  	ao2_cleanup(state);

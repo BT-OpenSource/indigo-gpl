@@ -1,0 +1,44 @@
+diff --git a/Makefile b/Makefile
+index e7a9273..a1fde1b 100644
+--- a/Makefile
++++ b/Makefile
+@@ -6,7 +6,7 @@ HEADER_DEPS := xdsl.h common.h xtm.h
+ 
+ ifeq ($(PLATFORM),BROADCOM)
+ SRCS := $(shell ls broadcom/*.c ./*.c)
+-LIBDSL_CFLAGS += -I./broadcom -DLINUX -DLINUX_FW_EXTRAVERSION=50204 -DSUPPORT_DSL_GFAST -DCONFIG_VDSL_SUPPORTED
++LIBDSL_CFLAGS += -I./broadcom -I./ -DLINUX -DLINUX_FW_EXTRAVERSION=50204 -DSUPPORT_DSL_GFAST -DCONFIG_VDSL_SUPPORTED
+ HEADER_DEPS += ./broadcom/adsldrv.h ./broadcom/AdslMibDef.h ./broadcom/bcmadsl.h
+ else ifeq ($(PLATFORM),INTEL)
+ SRCS := $(shell ls intel/*.c ./*.c)
+diff --git a/broadcom/bcm_dsl_api.c b/broadcom/bcm_dsl_api.c
+index 90f57a3..5ac834a 100644
+--- a/broadcom/bcm_dsl_api.c
++++ b/broadcom/bcm_dsl_api.c
+@@ -89,7 +89,7 @@ static inline int bcm_xdsl_dev_close(int fd)
+ 	return close(fd);
+ }
+ 
+-static int bcm_xdsl_get_object(char *obj, int objlen, char *out, unsigned long *outlen)
++static int bcm_xdsl_get_object(char *obj, int objlen, char *out, size_t *outlen)
+ {
+ 	int fd;
+ 	int retval;
+@@ -118,7 +118,7 @@ static int bcm_xdsl_get_object(char *obj, int objlen, char *out, unsigned long *
+ 
+ static int bcm_xdsl_get_mib_info(adslMibInfo *adsl)
+ {
+-	unsigned long size = sizeof(adslMibInfo);
++	size_t size = sizeof(adslMibInfo);
+ 	int retval;
+ 
+ 	retval = bcm_xdsl_get_object(NULL, 0, (char *)adsl, &size);
+@@ -130,7 +130,7 @@ static int bcm_xdsl_get_mib_info(adslMibInfo *adsl)
+ 
+ static int bcm_xdsl_get_cfg_info(adslCfgProfile *adsl)
+ {
+-	unsigned long size = sizeof(adslCfgProfile);
++	size_t size = sizeof(adslCfgProfile);
+ 	int retval;
+ 	char oidStr[] = { 95 };              /* kOidAdslPhyCfg */
+ 

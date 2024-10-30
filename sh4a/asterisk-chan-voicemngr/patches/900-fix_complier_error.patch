@@ -1,0 +1,216 @@
+--- a/src/channels/chan_voicemngr.c
++++ b/src/channels/chan_voicemngr.c
+@@ -125,7 +125,6 @@ static struct chan_voicemngr_subchannel* chan_voicemngr_get_active_subchannel(co
+ static int chan_voicemngr_get_sip_client_id(struct chan_voicemngr_subchannel *sub);
+ static struct chan_voicemngr_subchannel *chan_voicemngr_subchannel_get_peer(const struct chan_voicemngr_subchannel *sub);
+ static struct chan_voicemngr_pvt* chan_voicemngr_get_pvt_from_lineid(struct chan_voicemngr_pvt *p, int line_id);
+-static void handle_dtmf_calling(struct chan_voicemngr_subchannel *sub);
+ static void chan_voicemngr_cancel_dialing_timeouts(struct chan_voicemngr_pvt *p);
+ static int chan_voicemngr_should_relay_dtmf(const struct chan_voicemngr_subchannel *sub);
+ static struct ast_channel *chan_voicemngr_new(struct chan_voicemngr_subchannel *subchan, int state, const char *ext, const char *context,
+@@ -209,9 +208,6 @@ static int feature_access_code_add(const char *code);
+ /* Clear list of FAC */
+ static int feature_access_code_clear(void);
+ 
+-/* Match dialed digits against feature access codes */
+-static int feature_access_code_match(char *sequence);
+-
+ /* Check if a number is in the emergency list*/
+ static int check_emergency_number(char *number_list, char *number);
+ 
+@@ -2439,43 +2439,6 @@ static void chan_voicemngr_start_calling(struct chan_voicemngr_subchannel *sub,
+ 	}
+ }
+ 
+-/*
+- * Start calling if we have a (partial) match in asterisks dialplan after an interdigit timeout.
+- * Called on scheduler thread.
+- */
+-static int handle_interdigit_timeout(const void *data)
+-{
+-	ast_debug(9, "Interdigit timeout\n");
+-	struct chan_voicemngr_pvt *p = (struct chan_voicemngr_pvt *) data;
+-	//ast_mutex_lock(&p->lock);
+-	pvt_lock(p, "interdigit callback");
+-	p->interdigit_timer_id = -1;
+-	struct chan_voicemngr_subchannel *sub = chan_voicemngr_get_active_subchannel(p);
+-        if (channel_config[p->line_id].minimumnumberdigits  && strlen(p->dtmfbuf) >= channel_config[p->line_id].minimumnumberdigits){
+-           if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num))
+- 	   {
+-		//We have at least one matching extension in "normal" context,
+-		//and interdigit timeout has passed, so have asterisk start calling.
+-		//Asterisk will select the best matching extension if there are more than one possibility.
+-		ast_debug(9, "Interdigit timeout, extension(s) matching %s found\n", p->dtmfbuf);
+-		chan_voicemngr_start_calling(sub, p->context);
+-	   }
+-        }
+-        //if no limit on minimum digits check extension exits
+-        if(!channel_config[p->line_id].minimumnumberdigits){
+-            if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num))
+-           {
+-                //We have at least one matching extension in "normal" context,
+-                //and interdigit timeout has passed, so have asterisk start calling.
+-                //Asterisk will select the best matching extension if there are more than one possibility.
+-                ast_debug(9, "Interdigit timeout, extension(s) matching %s found\n", p->dtmfbuf);
+-                chan_voicemngr_start_calling(sub, p->context);
+-           }
+-       }
+-	//ast_mutex_unlock(&p->lock);
+-	pvt_unlock(p);
+-	return 0;
+-}
+ /*
+  * Play congestion tone if got AST_CAUSE_CALL_REJECTED
+  * Called on scheduler thread.
+@@ -2475,105 +2433,6 @@ static int handle_dialtone_timeout(const void *data)
+ 	return 0;
+ }
+ 
+-/*
+- * Start calling if we have a match in asterisks dialplan.
+- * Called after each new DTMF event, from monitor_events thread,
+- * with the required locks already held.
+- */
+-void handle_dtmf_calling(struct chan_voicemngr_subchannel *sub)
+-{
+-	struct chan_voicemngr_pvt *p = sub->parent;
+-	char termination_digit;
+-	int dtmfbuf_len = strlen(p->dtmfbuf);
+-	char dtmf_last_char = p->dtmfbuf[(dtmfbuf_len - 1)];
+-	char dtmf_one_before_last_char = p->dtmfbuf[(dtmfbuf_len > 1 ? dtmfbuf_len - 2 : 0)];
+-        
+-	termination_digit = channel_config[p->line_id].terminationdigit?channel_config[p->line_id].terminationdigit:0x23;
+-
+-	if (ast_exists_extension(NULL, p->context_direct, p->dtmfbuf, 1, p->cid_num) && !ast_matchmore_extension(NULL, p->context_direct, p->dtmfbuf, 1, p->cid_num))
+-	{
+-		//We have a full match in the "direct" context, so have asterisk place a call immediately
+-		ast_debug(9, "Direct extension matching %s found\n", p->dtmfbuf);
+-		chan_voicemngr_start_calling(sub, p->context_direct);
+-	}
+-
+-
+-	else if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) && dtmf_last_char == termination_digit
+-                && dtmf_one_before_last_char != 0x2A) {
+-
+-                ast_log(LOG_NOTICE, "Termination key %c is pressed during dialing\n",termination_digit);
+-                int match = feature_access_code_match(p->dtmfbuf);
+-                if (match == -1) {
+-                    ast_log(LOG_NOTICE, "no extension %s found, removing termination digit '%c'\n", p->dtmfbuf, termination_digit);
+-                    p->dtmfbuf[(dtmfbuf_len - 1)] = '\0';
+-                }
+-                else
+-                {
+-                    ast_log(LOG_NOTICE, "extension %s found (%s), keeping termination digit '%c'\n", p->dtmfbuf, match == 0 ? "perfect match" : "partial match", termination_digit);
+-                }
+-                if(channel_config[p->line_id].minimumnumberdigits)
+-                {
+-                    //Minimum dtmf limit is checked before starting a call.If limit is not reached,ignore
+-                    //We have a match in the "normal" context, and user ended the dialling sequence with a # or temination digit set  in dialplan,
+-                    //so have asterisk place a call immediately if sequence is not partially matching a feature access code
+-                    if(strlen(p->dtmfbuf) >= channel_config[p->line_id].minimumnumberdigits) {
+-                        chan_voicemngr_start_calling(sub, p->context);
+-                    }
+-                    else {
+-                        ast_log(LOG_ERROR, "Not reached the minimum digits to start a call!! \n");
+-                    }
+-                }
+-               else
+-               {
+-                     //No minimum limit, Start calling if we encounter a terminatingdigit
+-                     //We have a match in the "normal" context, and user ended the dialling sequence with a # or temination digit set  in dialplan,
+-                     //so have asterisk place a call immediately if sequence is not partially matching a feature access code
+-                     ast_log(LOG_NOTICE, "No minimum digit limit set start a call right away \n");
+-                     chan_voicemngr_start_calling(sub, p->context);
+-               }
+-
+-	}
+-	else if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) && !ast_matchmore_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num))
+-	{
+-		//We have a full match in the "normal" context, so have asterisk place a call immediately,
+-		//since no more digits can be added to the number
+-		//(this is unlikely to happen since there is probably a "catch-all" extension)
+-		ast_debug(9, "Unique extension matching %s found\n", p->dtmfbuf);
+-		chan_voicemngr_start_calling(sub, p->context);
+-	}
+-	else if (!ast_matchmore_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num))
+-	{
+-	    //Full match has been handled in the upper conditions
+-	    //Number become invalid if no ast_matchmore_extension
+-	    //Set dialtone to Unobtainable, and awaiting on hook
+-	    ast_debug(9, "number not matching any extensions, awaiting on hook\n");
+-	    p->dialtone = DIALTONE_UNOBTAINABLE;
+-	    sub->channel_state = AWAITONHOOK;
+-		p->dialtone_timeout_timer_id = ast_sched_add(sched, channel_config[p->line_id].offhook_nu_timeoutmsec, handle_dialtone_timeout, p);
+-	    chan_voicemngr_signal_dialtone(p);
+-	}
+-	else {
+-               if (channel_config[p->line_id].minimumnumberdigits && strlen(p->dtmfbuf) >= channel_config[p->line_id].minimumnumberdigits ){
+-                   int interdigitopenmsec = channel_config[p->line_id].interdigitopenmsec;
+-                   if (interdigitopenmsec){
+-                       ast_debug(9,"Scheduling interdigitopenmsec timeout of %d msec\n", interdigitopenmsec);
+-                       p->interdigit_timer_id = ast_sched_add(sched, interdigitopenmsec, handle_interdigit_timeout, p);
+-                   }
+-                   else{
+-                       int timeoutmsec = channel_config[p->line_id].timeoutmsec;
+-                       ast_debug(9,"Interdigitopenmsec not found !!Using timeoutsec timeout of %d msec\n", timeoutmsec);
+-                       p->interdigit_timer_id = ast_sched_add(sched, timeoutmsec, handle_interdigit_timeout, p);
+-                   }
+-               }
+-               else {
+-		     //No matches. We schedule a (new) interdigit timeout to occur
+-		     int timeoutmsec = channel_config[p->line_id].timeoutmsec;
+-		     ast_debug(9, "Scheduling interdigit timeout of %d msec\n", timeoutmsec);
+-		     p->interdigit_timer_id = ast_sched_add(sched, timeoutmsec, handle_interdigit_timeout, p);
+-               }
+-	}
+-}
+-
+ static void handle_Rnumber_etsi(struct chan_voicemngr_subchannel *sub, struct chan_voicemngr_subchannel *sub_peer,
+ 		struct ast_channel *owner, struct ast_channel *peer_owner)
+ {
+@@ -5815,45 +5674,6 @@ static int feature_access_code_clear(void)
+ 	return 0;
+ }
+ 
+-static int feature_access_code_match(char *sequence)
+-{
+-	struct feature_access_code *current;
+-	int retval = -1;
+-
+-	AST_LIST_TRAVERSE(&feature_access_codes, current, list) {
+-		char *seq = sequence;
+-		char *fac = current->code;
+-
+-		int res = -1;
+-		for (; *seq && *fac; seq++, fac++) {
+-			if (*fac == '.') {
+-				/* Perfect match */
+-				return 0;
+-			}
+-			else if (*seq == *fac) {
+-				/* Partial match */
+-				res = 1;
+-			}
+-			else {
+-				/* No match */
+-				res = -1;
+-				break;
+-			}
+-		}
+-
+-		if (res == 1 && *seq == *fac) {
+-			/* Perfect match */
+-			return 0;
+-		}
+-
+-		if (res != -1) {
+-			retval = res;
+-		}
+-	}
+-
+-	return retval;
+-}
+-
+ static int check_emergency_number(char *number_list, char *number)
+ {
+ 	int res = 0;

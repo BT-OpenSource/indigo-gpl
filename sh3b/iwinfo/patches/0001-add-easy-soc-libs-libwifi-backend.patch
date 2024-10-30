@@ -19,8 +19,8 @@ index 57b6a09..2e843a3 100644
  
 +ifneq ($(filter esl,$(IWINFO_BACKENDS)),)
 +	IWINFO_CFLAGS  += -DUSE_ESL
-+	IWINFO_CLI_LDFLAGS += -lnl-genl-3 -lnl-3 -leasy -lwifi-6
-+	IWINFO_LIB_LDFLAGS += -lnl-genl-3 -lnl-3 -leasy -lwifi-6
++	IWINFO_CLI_LDFLAGS += -lnl-genl-3 -lnl-3 -leasy -lwifi-7 -lwifiutils
++	IWINFO_LIB_LDFLAGS += -lnl-genl-3 -lnl-3 -leasy -lwifi-7 -lwifiutils
 +	IWINFO_LIB_OBJ += iwinfo_esl.o
 +endif
 +

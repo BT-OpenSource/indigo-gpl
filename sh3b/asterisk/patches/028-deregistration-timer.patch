@@ -234,7 +234,7 @@
  	pjsip_tx_data *tdata;
  
  	if (client_state->status == SIP_REGISTRATION_STOPPED
-@@ -828,6 +979,33 @@
+@@ -1150,6 +1150,33 @@ static int handle_client_deregistration(struct sip_outbound_registration_client_
  	 */
  	clear_endpoint_security_mechanisms(client_state);
  	ast_sip_auth_vector_destroy(&client_state->outbound_auths);
@@ -265,7 +265,7 @@
 +			ast_free(name);
 +		}
 +	}
- 	return 0;
+  	return 0;
  }
  
 @@ -1302,7 +1480,7 @@
@@ -287,11 +287,10 @@
  		}
  	} else if ((response->code == 401 || response->code == 407)
  		&& (!response->client_state->auth_attempted
-@@ -1381,6 +1562,13 @@
- 			/* See if we should monitor for transport shutdown */
- 			registration_transport_monitor_setup(response->rdata->tp_info.transport,
- 				response->client_state->registration_name);
-+
+@@ -1817,6 +1844,12 @@ static int handle_registration_response(void *data)
+ 				registration_transport_monitor_setup(response->transport_key,
+ 					response->client_state->registration_name);
+ 			}
 +			if (response->client_state->p_cscf_state == P_CSCF_TRANSITION_REGISTER) {
 +				/* Register part of transition to a new P-CSCF */
 +				ast_log(LOG_DEBUG, "P-CSCF transition complete\n");
@@ -301,10 +300,10 @@
  		} else {
  			ast_debug(1, "Outbound unregistration to '%s' with client '%s' successful\n", server_uri, client_uri);
  			update_client_state_status(response->client_state, SIP_REGISTRATION_UNREGISTERED);
-@@ -1390,6 +1578,19 @@
- 			ast_sip_transport_monitor_unregister(response->rdata->tp_info.transport,
- 				registration_transport_shutdown_cb, response->client_state->registration_name,
- 				monitor_matcher);
+@@ -1828,6 +1861,19 @@ static int handle_registration_response(void *data)
+ 					registration_transport_shutdown_cb, response->client_state->registration_name,
+ 					monitor_matcher);
+ 			}
 +
 +			if (response->client_state->p_cscf_state == P_CSCF_TRANSITION_UNREGISTER) {
 +				/* Unregister caused by the need to transition to a new P-CSCF */
@@ -348,14 +347,13 @@
  
  	/*
  	 * Register sorcery observers.
-@@ -3012,6 +3219,10 @@
+@@ -3302,6 +3302,9 @@ static int load_module(void)
+ 		network_change_stasis_cb, NULL);
  	stasis_subscription_accept_message_type(network_change_sub, ast_network_change_type());
  	stasis_subscription_set_filter(network_change_sub, STASIS_SUBSCRIPTION_FILTER_SELECTIVE);
- 
 +	device_state_sub = stasis_subscribe(ast_device_state_topic_all(), device_state_stasis_cb, NULL);
 +	stasis_subscription_accept_message_type(device_state_sub, ast_device_state_message_type());
 +	stasis_subscription_set_filter(network_change_sub, STASIS_SUBSCRIPTION_FILTER_SELECTIVE);
-+
+ 	ast_sip_register_service(&mod_mwi);
  	return AST_MODULE_LOAD_SUCCESS;
  }
- 

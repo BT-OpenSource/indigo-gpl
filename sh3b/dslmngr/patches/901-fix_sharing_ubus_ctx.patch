@@ -1,0 +1,30 @@
+diff --git a/main.c b/main.c
+index 17c4a5a..c8b8c24 100644
+--- a/main.c
++++ b/main.c
+@@ -54,6 +54,7 @@ int main(int argc, char **argv)
+ {
+ 	const char *ubus_socket = NULL;
+ 	struct ubus_context *ctx = NULL;
++	struct ubus_context *event_ctx = NULL;
+ 	int ch;
+ 	pthread_t evtid;
+ 	pthread_attr_t attr;
+@@ -88,7 +89,8 @@ int main(int argc, char **argv)
+ 
+ 	ubus_add_uloop(ctx);
+ 
+-	if (pthread_create(&evtid, &attr, &dslmngr_event_main, ctx) != 0)
++	event_ctx = ubus_connect(NULL);
++	if (pthread_create(&evtid, &attr, &dslmngr_event_main, event_ctx) != 0)
+ 		fprintf(stderr, "dslmngr: event thread create error!\n");
+ 
+ 	/* dslmngr_cmd_main(ctx); */
+@@ -101,6 +103,7 @@ int main(int argc, char **argv)
+ 
+ __ret:
+ 	ubus_free(ctx);
++	ubus_free(event_ctx);
+ 	uloop_done();
+ 
+ 	return 0;

@@ -1,32 +1,32 @@
 --- a/res/res_pjsip_outbound_registration.c
 +++ b/res/res_pjsip_outbound_registration.c
-@@ -27,6 +27,7 @@
- 
+@@ -28,6 +28,7 @@
+ #include <libubus.h>
  #include <pjsip.h>
  #include <pjsip_ua.h>
 +#include <time.h>
  
  #include "asterisk/res_pjsip.h"
  #include "asterisk/res_pjsip_cli.h"
-@@ -403,6 +404,8 @@ struct sip_outbound_registration_client_
- 	char *registration_name;
- 	/*! \brief Indicator, if there was a 494 response before */
+@@ -450,6 +451,8 @@ struct sip_outbound_registration_client_state {
  	unsigned int is494;
+ 	/*! \brief Expected time of registration lapse/expiration */
+ 	unsigned int registration_expires;
 +	/*! \brief Last successful registration time (seconds since unix epoch) */
 +	unsigned int last_successful_registration;
  };
  
  /*! \brief Outbound registration state information (persists for lifetime that registration should exist) */
-@@ -1248,6 +1251,8 @@ static int handle_registration_response(
- 			schedule_registration(response->client_state,
- 					next_registration_time(response->expiration));
+@@ -1561,6 +1564,8 @@ static int handle_registration_response(void *data)
+ 			response->client_state->retries = 0;
+ 			schedule_registration(response->client_state, next_registration_time(response->expiration));
  
 +			response->client_state->last_successful_registration = time(NULL);
 +
  			/* See if we should monitor for transport shutdown */
- 			registration_transport_monitor_setup(response->rdata->tp_info.transport,
- 				response->client_state->registration_name);
-@@ -1490,6 +1495,7 @@ static struct sip_outbound_registration_
+ 			if (PJSIP_TRANSPORT_IS_RELIABLE(response->rdata->tp_info.transport)) {
+ 				registration_transport_monitor_setup(response->transport_key,
+@@ -1849,6 +1854,7 @@ static struct sip_outbound_registration_state *sip_outbound_registration_state_a
  	}
  
  	state->registration = ao2_bump(registration);
@@ -34,30 +34,30 @@
  	return state;
  }
  
-@@ -2406,7 +2412,7 @@ static int cli_print_header(void *obj, v
+@@ -2809,7 +2815,7 @@ static int cli_print_header(void *obj, void *arg, int flags)
  	ast_assert(context->output_buffer != NULL);
  
  	ast_str_append(&context->output_buffer, 0,
--		" <Registration/ServerURI..............................>  <Auth..........>  <Status.......>\n");
+-		" <Registration/ServerURI..............................>  <Auth....................>  <Status.......>\n");
 +		" <Registration/ServerURI..............................>  <Auth..........>  <Status.......>  <Last Successful Registration Time>\n");
  
  	return 0;
  }
-@@ -2421,7 +2427,7 @@ static int cli_print_body(void *obj, voi
- 
+@@ -2826,7 +2832,7 @@ static int cli_print_body(void *obj, void *arg, int flags)
  	ast_assert(context->output_buffer != NULL);
+ 	expsecs = state ? state->client_state->registration_expires - ((int) time(NULL)) : 0;
  
--	ast_str_append(&context->output_buffer, 0, " %-s/%-*.*s  %-16s  %-16s\n",
-+	ast_str_append(&context->output_buffer, 0, " %-s/%-*.*s  %-16s  %-16s  %-35d\n",
+-	ast_str_append(&context->output_buffer, 0, " %-s/%-*.*s  %-26s  %-16s %s%d%s\n",
++	ast_str_append(&context->output_buffer, 0, " %-s/%-*.*s  %-26s  %-16s %s%d%s %-35d\n",
  		id,
  		(int) (REGISTRATION_URI_FIELD_LEN - strlen(id)),
  		(int) (REGISTRATION_URI_FIELD_LEN - strlen(id)),
-@@ -2429,7 +2435,8 @@ static int cli_print_body(void *obj, voi
- 		AST_VECTOR_SIZE(&registration->outbound_auths)
+@@ -2835,7 +2841,8 @@ static int cli_print_body(void *obj, void *arg, int flags)
  			? AST_VECTOR_GET(&registration->outbound_auths, 0)
  			: "n/a",
--		(state ? sip_outbound_registration_status_str(state->client_state->status) : "Unregistered"));
-+		(state ? sip_outbound_registration_status_str(state->client_state->status) : "Unregistered"),
+ 		(state ? sip_outbound_registration_status_str(state->client_state->status) : "Unregistered"),
+-		state ? " (exp. " : "", abs(expsecs), state ? (expsecs < 0 ? "s ago)" : "s)") : "");
++		state ? " (exp. " : "", abs(expsecs), state ? (expsecs < 0 ? "s ago)" : "s)") : "",
 +		state->client_state->last_successful_registration);
  	ao2_cleanup(state);
  

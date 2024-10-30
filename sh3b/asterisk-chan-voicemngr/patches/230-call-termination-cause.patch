@@ -1,0 +1,12 @@
+--- a/src/channels/chan_voicemngr.c
++++ b/src/channels/chan_voicemngr.c
+@@ -3874,6 +3874,9 @@ static void chan_voicemngr_process_event
+ 			} else if (sub->channel_state == RINGBACK) {
+ 				/* Outgoing unanswered call - rtp stats need to be collected */
+ 				chan_voicemngr_getRtpStats(owner);
++			} else if (sub->channel_state == INCALL && owner) {
++				ast_channel_local_disconnect_set(owner, 1);
++				ast_debug(3, "CallTerminationCause: LocalDisconnect detected\n");
+ 			}
+ 
+ 			sub->channel_state = ONHOOK;

@@ -1,0 +1,75 @@
+From 0ee8ac0652b7816fae4a455ad81f3838125f9230 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Thomas=20Wei=C3=9Fschuh?= <thomas@t-8ch.de>
+Date: Tue, 30 May 2023 20:01:49 +0200
+Subject: [PATCH] test_enosys: fix build on old kernels
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Fixes #2277
+
+Signed-off-by: Thomas Weißschuh <thomas@t-8ch.de>
+---
+ tests/functions.sh          | 6 ++++++
+ tests/helpers/test_enosys.c | 6 ++++++
+ tests/ts/mount/fallback     | 4 +---
+ 3 files changed, 13 insertions(+), 3 deletions(-)
+
+diff --git a/tests/functions.sh b/tests/functions.sh
+index bcc2e565b..c5e42b1a6 100644
+--- a/tests/functions.sh
++++ b/tests/functions.sh
+@@ -1157,3 +1157,9 @@ function ts_is_virt {
+ 	done
+ 	return 1
+ }
++
++function ts_check_enosys_syscalls {
++	ts_check_test_command "$TS_HELPER_ENOSYS"
++	"$TS_HELPER_ENOSYS" ${@/#/-s } true 2> /dev/null
++	[ $? -ne 0 ] && ts_skip "test_enosys does not work: $*"
++}
+diff --git a/tests/helpers/test_enosys.c b/tests/helpers/test_enosys.c
+index 88e7af3b0..9ee31610f 100644
+--- a/tests/helpers/test_enosys.c
++++ b/tests/helpers/test_enosys.c
+@@ -65,9 +65,15 @@ struct syscall {
+ };
+ 
+ const struct syscall syscalls[] = {
++#ifdef __NR_move_mount
+ 	{ "move_mount", __NR_move_mount },
++#endif
++#ifdef __NR_open_tree
+ 	{ "open_tree", __NR_open_tree },
++#endif
++#ifdef __NR_fsopen
+ 	{ "fsopen", __NR_fsopen },
++#endif
+ };
+ 
+ int main(int argc, char **argv)
+diff --git a/tests/ts/mount/fallback b/tests/ts/mount/fallback
+index fe932ee78..c7b8ecfe4 100755
+--- a/tests/ts/mount/fallback
++++ b/tests/ts/mount/fallback
+@@ -6,15 +6,13 @@ TS_DESC="fstab-fallback"
+ . "$TS_TOPDIR"/functions.sh
+ ts_init "$*"
+ 
+-ts_check_test_command "$TS_HELPER_ENOSYS"
+ ts_check_test_command "$TS_CMD_MOUNT"
+ ts_check_test_command "$TS_CMD_UMOUNT"
+ ts_check_test_command "$TS_CMD_FINDMNT"
+ ts_check_test_command "$TS_CMD_LOSETUP"
++ts_check_enosys_syscalls open_tree fsopen
+ 
+ ts_skip_nonroot
+-"$TS_HELPER_ENOSYS" true 2> /dev/null
+-[ "$?" -eq "$TS_EXIT_NOTSUPP" ] && ts_skip "test_enosys does not work"
+ 
+ test_mount_fallback() {
+ 	ts_init_subtest "$1"
+-- 
+2.42.0
+

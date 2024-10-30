@@ -1,0 +1,11 @@
+--- a/lua/ubus.c
++++ b/lua/ubus.c
+@@ -237,7 +237,7 @@ ubus_lua_format_blob_array(lua_State *L,
+ 	{
+ 		if (!ubus_lua_format_blob(L, b, table))
+ 		{
+-			lua_pop(L, 1);
++			lua_pop(L, 2);
+ 			return false;
+ 		}
+ 	}

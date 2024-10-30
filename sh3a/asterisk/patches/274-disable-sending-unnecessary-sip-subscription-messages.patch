@@ -1,0 +1,14 @@
+--- a/res/res_pjsip_outbound_registration.c
++++ b/res/res_pjsip_outbound_registration.c
+@@ -1875,11 +1875,6 @@ static int handle_registration_response(
+ 		}
+ 
+ 		save_response_fields_to_transport(response);
+-
+-		struct ast_sip_endpoint *endpoint = ast_sorcery_retrieve_by_id(ast_sip_get_sorcery(), "endpoint", response->client_state->registration_name);
+-		if (strlen(endpoint->incoming_mwi_mailbox))
+-			mwi_send_subscribe(endpoint, response->expiration);
+-
+ 	} else if (response->client_state->destroy) {
+ 		/* We need to deal with the pending destruction instead. */
+ 	} else if (response->code == 494) {

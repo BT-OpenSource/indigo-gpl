@@ -9,28 +9,31 @@ Subject: [PATCH] mtd-utils: add imagewrite
  2 files changed, 676 insertions(+), 1 deletion(-)
  create mode 100644 nand-utils/imagewrite.c
 
-diff --git a/nand-utils/Makemodule.am b/nand-utils/Makemodule.am
-index d75b0cb..cac3d1e 100644
---- a/nand-utils/Makemodule.am
-+++ b/nand-utils/Makemodule.am
-@@ -13,8 +13,11 @@ nftldump_LDADD = libmtd.a
- nftl_format_SOURCES = nand-utils/nftl_format.c
- nftl_format_LDADD = libmtd.a
+Index: mtd-utils-2.1.4/nand-utils/Makemodule.am
+===================================================================
+--- mtd-utils-2.1.4.orig/nand-utils/Makemodule.am
++++ mtd-utils-2.1.4/nand-utils/Makemodule.am
+@@ -18,12 +18,15 @@ nftl_format_LDADD = libmtd.a
+ nandflipbits_SOURCES = nand-utils/nandflipbits.c
+ nandflipbits_LDADD = libmtd.a
  
 +imagewrite_SOURCES = nand-utils/imagewrite.c
 +imagewrite_LDADD = libmtd.a
 +
- NAND_BINS = \
--	nanddump nandwrite nandtest nftldump nftl_format
-+	nanddump nandwrite nandtest nftldump nftl_format imagewrite
- 
  NAND_SH = \
  	nand-utils/load_nandsim.sh
-diff --git a/nand-utils/imagewrite.c b/nand-utils/imagewrite.c
-new file mode 100644
-index 0000000..3602662
+ 
+ EXTRA_DIST += $(NAND_SH)
+ 
+-sbin_PROGRAMS += nanddump nandwrite nandtest nftldump nftl_format nandflipbits
++sbin_PROGRAMS += nanddump nandwrite nandtest nftldump nftl_format nandflipbits imagewrite
+ 
+ if BUILD_TESTS
+ test_SCRIPTS += $(NAND_SH)
+Index: mtd-utils-2.1.4/nand-utils/imagewrite.c
+===================================================================
 --- /dev/null
-+++ b/nand-utils/imagewrite.c
++++ mtd-utils-2.1.4/nand-utils/imagewrite.c
 @@ -0,0 +1,672 @@
 +/*
 + *  imagewrite.c
@@ -704,6 +707,3 @@ index 0000000..3602662
 +	return EXIT_SUCCESS;
 +}
 +
--- 
-2.7.4
-

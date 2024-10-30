@@ -4,21 +4,24 @@ Date: Wed, 12 May 2021 19:55:24 +0200
 Subject: [PATCH] add hardware ids for Broadcom platforms
 
 ---
- hardware.txt | 4 ++++
+ devices.txt | 4 ++++
  1 file changed, 4 insertions(+)
 
-diff --git a/hardware.txt b/hardware.txt
+diff --git a/devices.txt b/devices.txt
 index ea74929..9362d1f 100644
---- a/hardware.txt
-+++ b/hardware.txt
-@@ -197,3 +197,7 @@
- 0x14c3 0x7915 0x14c3 0x7915    0      0  "MediaTek" "MT7915E"
+--- a/devices.txt
++++ b/devices.txt
+@@ -200,6 +200,10 @@
  0x14e4 0xaa52 0x14e4 0xaa52    0      0  "Broadcom" "BCM43602"
+ 0x02d0 0xa9a6 0x0000 0x0000    0      0  "Cypress"  "CYW43455"
  0x1ae9 0x0310 0x1ae9 0x0000    0      0  "Wilocity" "Wil6210"
 +0x14e4 0x6710 0x0000 0x0000    0      0  "Broadcom" "BCM6710"
 +0x14e4 0x6715 0x0000 0x0000    0      0  "Broadcom" "BCM6715"
 +0x14e4 0xaaa4 0x0000 0x0000    0      0  "Broadcom" "BCM43684"
 +0x14e4 0xf6ca 0x0000 0x0000    0      0  "Broadcom" "BCM63178"
+ 
+ # USB devices
+ # 0x0000 | 0x0000 | vendor id | product id | ...
 -- 
 2.25.1
 

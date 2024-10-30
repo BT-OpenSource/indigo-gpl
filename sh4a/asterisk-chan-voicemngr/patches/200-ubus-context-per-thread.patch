@@ -1,0 +1,19 @@
+--- a/src/channels/chan_voicemngr.c
++++ b/src/channels/chan_voicemngr.c
+@@ -2868,14 +2958,14 @@
+ static int check_voice_test_mode(void) {
+ 	uint32_t id;
+ 	struct blob_buf bb;
+-	ubus_lookup_id(ctx, "voice.services", &id);
++	ubus_lookup_id(get_shared_context(__FUNCTION__), "voice.services", &id);
+ 	if(!id) {
+ 		return -1;
+ 	}
+ 
+ 	memset(&bb, 0, sizeof(bb));
+ 	blob_buf_init(&bb, 0);
+-	int ret = ubus_invoke(ctx, id, "status", bb.head, check_voice_test_mode_cb, &voice_test_mode, 2000);
++	int ret = ubus_invoke(get_shared_context(__FUNCTION__), id, "status", bb.head, check_voice_test_mode_cb, &voice_test_mode, 2000);
+ 	if(ret != UBUS_STATUS_OK) {
+ 		ast_log(LOG_ERROR, "Failed to get voice test mode status\n");
+ 	}

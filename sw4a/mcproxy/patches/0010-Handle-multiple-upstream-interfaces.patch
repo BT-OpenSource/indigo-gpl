@@ -1,0 +1,122 @@
+--- a/mcproxy/include/parser/interface.hpp
++++ b/mcproxy/include/parser/interface.hpp
+@@ -220,6 +220,10 @@ public:
+     const std::string& get_instance_name() const;
+     const std::list<std::shared_ptr<interface>>& get_upstreams() const;
+     const std::list<std::shared_ptr<interface>>& get_downstreams() const;
++    bool delete_upstream(const std::shared_ptr<interface>& id);
++    bool delete_downstream(const std::shared_ptr<interface>& id);
++    int get_upstream_count() const;
++    int get_downstream_count() const;
+     const std::list<std::shared_ptr<rule_binding>>& get_global_settings() const;
+     int get_table_number() const;
+     bool get_user_selected_table_number() const; 
+--- a/mcproxy/src/parser/configuration.cpp
++++ b/mcproxy/src/parser/configuration.cpp
+@@ -212,25 +212,45 @@ void configuration::initalize_interfaces()
+ 	};
+ 
+     for (auto & inst : def_set) {
++		auto downstreams = inst->get_downstreams();
++			for (auto & downstream : downstreams) {
++				try {
++					add(downstream);
++				} catch (const char *s) {
++					inst->delete_downstream(downstream);
++					continue;
++				}
++			}
+ 
+-		try {
+-			for (auto & downstream : inst->get_downstreams()) {
+-				add(downstream);
++			if (inst->get_downstream_count() == 0) {
++				m_inst_def_set.erase(inst);
++				continue;
+ 			}
+ 
+-			for (auto & upstream : inst->get_upstreams()) {
+-				add(upstream);
++		auto upstreams = inst->get_upstreams();
++			for (auto & upstream : upstreams) {
++				try {
++					add(upstream);
++				} catch (const char *s) {
++					inst->delete_upstream(upstream);
++					continue;
++				}
+ 			}
+ 
+-			if (!m_interfaces_map.insert(std::pair<std::string, std::shared_ptr<interfaces>>(inst->get_instance_name(), result)).second) {
+-				HC_LOG_ERROR("proxy instance " << inst->get_instance_name() << " already exists");
+-				throw "failed to add instance";
++			if (inst->get_upstream_count() == 0) {
++				m_inst_def_set.erase(inst);
++				continue;
+ 			}
+ 
+-		} catch (const char *s) {
+-			m_inst_def_set.erase(inst);
+-			continue;
+-		}
++			try {
++				if (!m_interfaces_map.insert(std::pair<std::string, std::shared_ptr<interfaces>>(inst->get_instance_name(), result)).second) {
++					HC_LOG_ERROR("proxy instance " << inst->get_instance_name() << " already exists");
++					throw "failed to add instance";
++				}
++			} catch (const char *s) {
++				m_inst_def_set.erase(inst);
++				continue;
++			}
+     }
+ 
+ 	if (m_inst_def_set.size() == 0) {
+--- a/mcproxy/src/parser/interface.cpp
++++ b/mcproxy/src/parser/interface.cpp
+@@ -517,6 +517,46 @@ const std::list<std::shared_ptr<interface>>& instance_definition::get_downstream
+     return m_downstreams;
+ }
+ 
++int instance_definition::get_upstream_count() const
++{
++    HC_LOG_TRACE("");
++    return m_upstreams.size();
++}
++
++int instance_definition::get_downstream_count() const
++{
++    HC_LOG_TRACE("");
++    return m_downstreams.size();
++}
++
++bool instance_definition::delete_upstream(const std::shared_ptr<interface>& id)
++{
++	std::list<std::shared_ptr<interface>>::iterator i;
++
++	HC_LOG_TRACE("");
++	for (i = m_upstreams.begin(); i != m_upstreams.end(); ++i) {
++		if (id == *i) {
++			m_upstreams.erase(i);
++			return true;
++		}
++	}
++	return false;
++}
++
++bool instance_definition::delete_downstream(const std::shared_ptr<interface>& id)
++{
++	std::list<std::shared_ptr<interface>>::iterator i;
++
++    HC_LOG_TRACE("");
++	for (i = m_downstreams.begin(); i != m_downstreams.end(); ++i) {
++		if (id == *i) {
++			m_downstreams.erase(i);
++			return true;
++		}
++	}
++	return false;
++}
++
+ const std::list<std::shared_ptr<rule_binding>>& instance_definition::get_global_settings() const
+ {
+     HC_LOG_TRACE("");

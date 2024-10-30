@@ -1,0 +1,13 @@
+--- a/res/res_pjsip_pubsub.c
++++ b/res/res_pjsip_pubsub.c
+@@ -3864,7 +3864,9 @@
+ 	pjsip_evsub_set_mod_data(evsub, pubsub_module.id, NULL);
+ 
+ #ifdef HAVE_PJSIP_EVSUB_GRP_LOCK
+-	pjsip_evsub_dec_ref(sub_tree->evsub);
++	if (sub_tree->role == AST_SIP_NOTIFIER) {
++		pjsip_evsub_dec_ref(sub_tree->evsub);
++	}
+ #endif
+ 
+ 	sub_tree->evsub = NULL;

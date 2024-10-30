@@ -88,28 +88,31 @@ Errors-To: linux-mtd-bounces+incoming=patchwork.ozlabs.org@lists.infradead.org
  3 files changed, 100 insertions(+), 1 deletion(-)
  create mode 100644 nand-utils/nandmarkbad.c
 
-diff --git a/nand-utils/Makemodule.am b/nand-utils/Makemodule.am
-index d75b0cb3e36c..c31dcb01f06e 100644
---- a/nand-utils/Makemodule.am	2020-04-12 17:16:47.218395668 +0200
-+++ b/nand-utils/Makemodule.am.new	2020-04-12 17:16:43.854388945 +0200
-@@ -16,8 +16,11 @@ nftl_format_LDADD = libmtd.a
+Index: mtd-utils-2.1.4/nand-utils/Makemodule.am
+===================================================================
+--- mtd-utils-2.1.4.orig/nand-utils/Makemodule.am
++++ mtd-utils-2.1.4/nand-utils/Makemodule.am
+@@ -21,12 +21,15 @@ nandflipbits_LDADD = libmtd.a
  imagewrite_SOURCES = nand-utils/imagewrite.c
  imagewrite_LDADD = libmtd.a
  
 +nandmarkbad_SOURCES = nand-utils/nandmarkbad.c
 +nandmarkbad_LDADD = libmtd.a
 +
- NAND_BINS = \
--	nanddump nandwrite nandtest nftldump nftl_format imagewrite
-+	nanddump nandwrite nandtest nftldump nftl_format imagewrite nandmarkbad
- 
  NAND_SH = \
  	nand-utils/load_nandsim.sh
-diff --git a/nand-utils/nandmarkbad.c b/nand-utils/nandmarkbad.c
-new file mode 100644
-index 000000000000..023bdbe50c4d
+ 
+ EXTRA_DIST += $(NAND_SH)
+ 
+-sbin_PROGRAMS += nanddump nandwrite nandtest nftldump nftl_format nandflipbits imagewrite
++sbin_PROGRAMS += nanddump nandwrite nandtest nftldump nftl_format nandflipbits imagewrite nandmarkbad
+ 
+ if BUILD_TESTS
+ test_SCRIPTS += $(NAND_SH)
+Index: mtd-utils-2.1.4/nand-utils/nandmarkbad.c
+===================================================================
 --- /dev/null
-+++ b/nand-utils/nandmarkbad.c
++++ mtd-utils-2.1.4/nand-utils/nandmarkbad.c
 @@ -0,0 +1,95 @@
 +#define PROGRAM_NAME "nandmarkbad"
 +

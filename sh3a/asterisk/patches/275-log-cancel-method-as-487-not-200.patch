@@ -1,0 +1,29 @@
+--- a/res/res_pjsip_session.c
++++ b/res/res_pjsip_session.c
+@@ -4793,8 +4793,10 @@ static void handle_incoming_response(struct ast_sip_session *session, pjsip_rx_d
+ 		}
+ 	}
+ 	if (session && session->channel) {
+-		ast_channel_sipResponseCode_set(session->channel, status.code == 180 ? 487 : status.code);
+-		if (status.code == 200) {
++		int code = &rdata->msg_info.cseq->method.id == PJSIP_CANCEL_METHOD || status.code == 180 ? 487 : status.code;
++
++		ast_channel_sipResponseCode_set(session->channel, code);
++		if (code == 200) {
+ 			pjsip_generic_string_hdr *SessionID = NULL;
+ 			static const pj_str_t headerName = { "Session-ID", 10 };
+ 			SessionID = pjsip_msg_find_hdr_by_name(rdata->msg_info.msg, &headerName, NULL);
+@@ -4873,8 +4875,11 @@ static void handle_outgoing_response(struct ast_sip_session *session, pjsip_tx_d
+ 			supplement->outgoing_response(session, tdata);
+ 		}
+ 	}
+-	if (session && session->channel)
+-		ast_channel_sipResponseCode_set(session->channel, status.code == 180 ? 487 : status.code);
++	if (session && session->channel) {
++		int code = cseq->method.id == PJSIP_CANCEL_METHOD || status.code == 180 ? 487 : status.code;
++
++		ast_channel_sipResponseCode_set(session->channel, code);
++	}
+ 
+ 	SCOPE_EXIT("%s\n", ast_sip_session_get_name(session));
+ }

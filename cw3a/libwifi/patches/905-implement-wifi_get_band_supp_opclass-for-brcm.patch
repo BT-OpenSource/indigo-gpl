@@ -1,0 +1,26 @@
+diff --git a/modules/broadcom/brcm.c b/modules/broadcom/brcm.c
+index 88825fe..343d949 100644
+--- a/modules/broadcom/brcm.c
++++ b/modules/broadcom/brcm.c
+@@ -270,6 +270,12 @@ static int radio_get_curr_opclass(const char *name, struct wifi_opclass *o)
+ 	return wifi_get_opclass(netdev, o);;
+ }
+ 
++static int radio_get_band_supp_opclass(const char *name, enum wifi_band band,
++        int *num_opclass, struct wifi_opclass *o)
++{
++    return wifi_get_band_supported_opclass(name, band, num_opclass, o);
++}
++
+ static int radio_get_bandwidth(const char *name, enum wifi_bw *bw)
+ {
+ 	char netdev[16];
+@@ -1161,6 +1167,8 @@ const struct wifi_driver brcm_driver = {
+ 
+ 	.get_curr_opclass = radio_get_curr_opclass,
+ 
++	.radio.get_band_supp_opclass = radio_get_band_supp_opclass,
++
+ 	.get_bandwidth = radio_get_bandwidth,
+ 	.get_supp_bandwidths = bcmwl_radio_get_supp_bw,
+ 	.radio.get_band_supp_bandwidths = radio_get_band_supp_bandwidths,

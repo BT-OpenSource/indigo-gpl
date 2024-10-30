@@ -1,17 +1,5 @@
 --- a/res/res_pjsip_session.c
 +++ b/res/res_pjsip_session.c
-@@ -4127,7 +4127,10 @@ end:
- 
- 		ast_channel_SIPSessionID_set(invite->session->channel, value);
- 		ast_channel_sessionId_set(invite->session->channel, local->origin.id);
--		ast_channel_sipIpAddress_set(invite->session->channel, pj_strbuf(&local->origin.addr), pj_strlen(&local->origin.addr));
-+		/* Log the IP that the INVITE came from as CallLog.{i}.X_Vendor_SIPIPAddress */
-+		const char *addr_buf;
-+		addr_buf = pj_sockaddr_print(&invite->rdata->pkt_info.src_addr, buffer, sizeof(buffer), 0);
-+		ast_channel_sipIpAddress_set(invite->session->channel, addr_buf, strlen(addr_buf));
- 	}
- 
- 	SCOPE_EXIT_RTN_VALUE(0, "%s\n", ast_sip_session_get_name(invite->session));
 @@ -5048,6 +5051,15 @@ static void session_inv_on_tsx_state_changed(pjsip_inv_session *inv, pjsip_trans
  		break;
  	}
@@ -28,11 +16,3 @@
  	if (AST_LIST_EMPTY(&session->delayed_requests)) {
  		/* No delayed request pending, so just return */
  		SCOPE_EXIT_RTN("Nothing delayed\n");
-@@ -5360,7 +5372,6 @@ static struct pjmedia_sdp_session *create_local_sdp(pjsip_inv_session *inv, stru
- end:
- 	if (session && session->channel) {
- 		ast_channel_sessionId_set(session->channel, local->origin.id);
--		ast_channel_sipIpAddress_set(session->channel, pj_strbuf(&local->origin.addr), pj_strlen(&local->origin.addr));
- 	}
- 
- 	SCOPE_EXIT_RTN_VALUE(local, "%s\n", ast_sip_session_get_name(session));
