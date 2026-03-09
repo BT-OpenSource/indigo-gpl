@@ -1,0 +1,39 @@
+From f3fc0b76040685829191debc03edf72f486ae8ae Mon Sep 17 00:00:00 2001
+From: Felix Fietkau <nbd@nbd.name>
+Date: Tue, 28 Jan 2025 19:55:25 +0100
+Subject: [PATCH] libuci: fix false positive warning on older gcc versions
+
+Fixes the following warning:
+
+  libuci.c: In function 'uci_set_conf2dir':
+  libuci.c:97:59: error: argument 'dir' might be clobbered by 'longjmp' or 'vfork' [-Werror=clobbered]
+     97 | int uci_set_conf2dir(struct uci_context *ctx, const char *dir)
+        |                                               ~~~~~~~~~~~~^~~
+  cc1: all warnings being treated as errors
+
+Reported-by: Matthias Franck <matthias.franck@softathome.com>
+Signed-off-by: Felix Fietkau <nbd@nbd.name>
+---
+ libuci.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/libuci.c b/libuci.c
+index cffb916..d854549 100644
+--- a/libuci.c
++++ b/libuci.c
+@@ -98,11 +98,11 @@ int uci_set_conf2dir(struct uci_context *ctx, const char *dir)
+ {
+ 	char *cdir;
+ 
+-	UCI_HANDLE_ERR(ctx);
+-	if (dir && !dir[0])
+-		dir = NULL;
++	if (!dir || !dir[0])
++		cdir = NULL;
++	else if ((cdir = strdup(dir)) == NULL)
++		return UCI_ERR_MEM;
+ 
+-	cdir = dir ? uci_strdup(ctx, dir) : NULL;
+ 	if (ctx->conf2dir != uci_conf2dir)
+ 		free(ctx->conf2dir);
+ 	ctx->conf2dir = cdir;

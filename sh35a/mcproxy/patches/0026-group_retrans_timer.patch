@@ -1,0 +1,13 @@
+diff -Naru a/mcproxy/src/proxy/querier.cpp b/mcproxy/src/proxy/querier.cpp
+--- a/mcproxy/src/proxy/querier.cpp	2025-07-17 17:33:27.408589351 +0100
++++ b/mcproxy/src/proxy/querier.cpp	2025-07-17 17:39:09.617969275 +0100
+@@ -787,7 +787,9 @@
+             auto rtimer = std::make_shared<retransmit_group_timer_msg>(m_if_index, gaddr, llqi);
+             ginfo.group_retransmission_timer = rtimer;
+             m_timing->add_time(llqi, m_msg_worker, rtimer);
+-        }
++        } else {
++            ginfo.group_retransmission_timer = nullptr;
++	}
+ 
+         m_sender->send_mc_addr_specific_query(m_if_index, m_timers_values, gaddr, ginfo.shared_filter_timer->is_remaining_time_greater_than(m_timers_values.get_last_listener_query_time()));
