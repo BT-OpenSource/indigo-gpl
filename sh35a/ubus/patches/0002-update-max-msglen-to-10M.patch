@@ -1,0 +1,13 @@
+Index: ubus-2021-02-15-2537be01/CMakeLists.txt
+===================================================================
+--- ubus-2021-02-15-2537be01.orig/CMakeLists.txt
++++ ubus-2021-02-15-2537be01/CMakeLists.txt
+@@ -14,7 +14,7 @@ OPTION(BUILD_EXAMPLES "build examples" O
+ 
+ SET(CMAKE_SHARED_LIBRARY_LINK_C_FLAGS "")
+ SET(UBUS_UNIX_SOCKET "/var/run/ubus/ubus.sock")
+-SET(UBUS_MAX_MSGLEN 1048576)
++SET(UBUS_MAX_MSGLEN 10485760)
+ 
+ ADD_DEFINITIONS( -DUBUS_UNIX_SOCKET="${UBUS_UNIX_SOCKET}")
+ ADD_DEFINITIONS( -DUBUS_MAX_MSGLEN=${UBUS_MAX_MSGLEN})
