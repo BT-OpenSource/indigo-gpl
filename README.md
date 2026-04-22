@@ -6,12 +6,15 @@ The structure of the releases are patchsets associated with the packages. These 
 ## Platforms
 Indigo supports multiple platforms, and the patchsets are separated by platform, even though many packages are common across all platforms.
 
+### Hubs
 * [SH31 / SH32](sh3b/OPENSOURCE.md)
 * [SH30](sh3a/OPENSOURCE.md)
-* [SW30](cw3a/OPENSOURCE.md)
 * [SH40](sh4a/OPENSOURCE.md)
-* [SW40](sw4a/OPENSOURCE.md)
 * [SH35](sh35a/OPENSOURCE.md)
+
+### Extenders
+* [SW30](cw3a/OPENSOURCE.md)
+* [SW40](sw4a/OPENSOURCE.md)
 * [SW35](sw35a/OPENSOURCE.md)
 
 Enjoy,<br>

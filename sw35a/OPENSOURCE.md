@@ -1,7 +1,7 @@
 # Open Source Report
-## Version: r3.35.24-R-1648110-R-1648110
+## Version: r4.22.1-R-1826004-R-1826004
 ## Platform: sw35a
-## Created: 2025-12-11T0946
+## Created: 2026-04-09T2022
 |Package|Version|License|CPE-ID|SourceSource|
 |:---:|:---:|:---:|:---:|:---:|
 |base-files|1655~6df0e3d02a|GPL-2.0|||
@@ -26,6 +26,36 @@
 |nand-utils|2.2.1-r1|GPLv2|cpe:/a:mtd-utils_project:mtd-utils|[nand-utils](./dl/mtd-utils-2.2.1.tar.bz2)<br>|
 |ubi-utils|2.2.1-r1|GPLv2|cpe:/a:mtd-utils_project:mtd-utils|[ubi-utils](./dl/mtd-utils-2.2.1.tar.bz2)<br>|
 |xtables-legacy|1.8.10-r1|GPL-2.0|cpe:/a:netfilter:iptables|[xtables-legacy](./dl/iptables-1.8.10.tar.xz)<br>|
+|bridgemngr|1.0.9|GPL-2.0-only||[bridgemngr](./dl/bridgemngr-1.0.9-18c2921a1cf5bfa027c11c5e6ca605ef69fd1168.tar.gz)<br>|
+|ethmngr|2.1.10|GPL-2.0-only||[ethmngr](./dl/ethmngr-2.1.10_2d35e86cc8dfd7ef4e0d8579f5d314e90faadc90.tar.xz)<br>|
+|fdtextract|1.0-r1|GPLv2||[fdtextract](./dl/fdtextract-1.0-e3cefda3b26c9aea3021b20725ce7b31b33eebc4.tar.gz)<br>|
+|libdpp|2.1.1|LGPL-2.1-only||[libdpp](./dl/libdpp-2.1.1_6024efd3db9dd490c07465ea9b0c15120063165c.tar.xz)<br>|
+|libeasy|7.4.5|LGPL-2.1-only||[libeasy](./dl/libeasy-7.4.5_67e6b91b8aca4c068a71f097f5f0576b47ec1d2e.tar.xz)<br>|
+|libethernet|7.2.111|LGPL-2.1-only||[libethernet](./dl/libethernet-7.2.111_6e7216e657dfb59e869e393ef58e6b4593c16fc7.tar.xz)<br>|
+|libqos|7.2.108|LGPL-2.1-only||[libqos](./dl/libqos-7.2.108_6a72e35e1a662e2f707e4901679676a9c09b3bc2.tar.xz)<br>|
+|libwifi|7.10.9|LGPL-2.1-only||[libwifi](./dl/libwifi-7.10.9_b2718296b4312e0bb6bd4cab802453d696a666d2.tar.xz)<br>|
+|libwifiutils|7.10.9|LGPL-2.1-only||[libwifiutils](./dl/libwifi-7.10.9_b2718296b4312e0bb6bd4cab802453d696a666d2.tar.xz)<br>|
+|logmngr|1.0.7|GPL-2.0-only||[logmngr](./dl/logmngr-1.0.7.tar.gz)<br>|
+|mcastmngr|1.2.8|GPL-2.0-only||[mcastmngr](./dl/mcastmngr-1.2.8-275d7e5448333e53f8bc980344b39f7f577d4664.tar.gz)<br>|
+|netmode|1.0.1-r1|GPL-2.0-only|||
+|qosmngr|1.0.17|GPL-2.0-only||[qosmngr](./dl/qosmngr-1.0.17-c723a2c999bb982030df2a47a69f356bfafa0af7.tar.gz)<br>|
+|questd|5.2.5|GPL-2.0-only||[questd](./dl/questd-5.2.5-38af3655416c80933f89f5a03638403a7c051a42.tar.gz)<br>|
+|rulengd|1.2.11-r1|GPL-2.0-only||[rulengd](./dl/rulengd-1.2.11-8fabf294cc056fd9a85cad06e81bd11df64e23a3.tar.gz)<br>|
+|self-diagnostics|1.0.11-r1|GPL-2.0-only|||
+|wifimngr|17.5.9|GPL-2.0-only||[wifimngr](./dl/wifimngr-17.5.9_dca2859f6bb2c0ba68dff996d693d00a4a21bdf0.tar.xz)<br>|
+|mcproxy|2017.08.24~93b5ace4-r9|GPL-2.0-or-later||[mcproxy](./dl/mcproxy-2017.08.24~93b5ace4.tar.zst)<br>|
+|evtest|1.35-r1|GPL-2.0-or-later||[evtest](./dl/evtest-1.35.tar.zst)<br>|
+|gpiod-tools|1.6.4-r1|LGPL-2.1-or-later||[gpiod-tools](./dl/libgpiod-1.6.4.tar.xz)<br>|
+|iptables-mod-ipmark|3.26-r1|GPL-2.0||[iptables-mod-ipmark](./dl/xtables-addons-3.26.tar.xz)<br>|
+|libaio|0.3.113-r3|LGPL-2.1-only|cpe:/a:libaio_project:libaio|[libaio](./dl/libaio-0.3.113.tar.gz)<br>|
+|libgcrypt|1.10.3-r1|LGPL-2.1-or-later|cpe:/a:gnupg:libgcrypt|[libgcrypt](./dl/libgcrypt-1.10.3.tar.bz2)<br>|
+|libgpg-error|1.49-r1|LGPL-2.1-or-later|cpe:/a:gnupg:libgpg-error|[libgpg-error](./dl/libgpg-error-1.49.tar.bz2)<br>|
+|libgpiod|1.6.4-r1|LGPL-2.1-or-later||[libgpiod](./dl/libgpiod-1.6.4.tar.xz)<br>|
+|libzstd|1.5.6-r1|GPL-2.0-or-later||[libzstd](./dl/zstd-1.5.6.tar.gz)<br>|
+|mmc-utils|2024.03.05~e1281d4d-r1|GPL-2.0-only||[mmc-utils](./dl/mmc-utils-2024.03.05~e1281d4d.tar.zst)<br>|
+|quota|4.09-r2|GPL-2.0-or-later|cpe:/a:jan_kara:linux_diskquota|[quota](./dl/quota-4.09.tar.gz)<br>|
+|squashfs-tools-mksquashfs|4.6.1-r1|GPL-2.0-only|cpe:/a:squashfs-tools_project:squashfs-tools|[squashfs-tools-mksquashfs](./dl/squashfs-tools-4.6.1.tar.gz)<br>|
+|sysstat|12.7.5-r2|GPL-2.0-or-later|cpe:/a:sysstat_project:sysstat|[sysstat](./dl/sysstat-12.7.5.tar.xz)<br>|
 |6in4|29|GPL-2.0|||
 |6to4|13|GPL-2.0|||
 |busybox-ce|1.36.1-r2|GPL-2.0|cpe:/a:busybox:busybox|[busybox-ce](./dl/busybox-1.36.1.tar.bz2)<br>|
@@ -87,33 +117,3 @@
 |ustp|2023.05.29~a85a5bc8-r1|GPL-2.0||[ustp](./dl/ustp-2023.05.29~a85a5bc8.tar.zst)<br>|
 |uuidgen|2.40.2-r1|GPL-2.0-only|cpe:/a:kernel:util-linux|[uuidgen](./dl/util-linux-2.40.2.tar.xz)<br>|
 |wifi-scripts|1.0-r1|GPL-2.0|||
-|mcproxy|2017.08.24~93b5ace4-r9|GPL-2.0-or-later||[mcproxy](./dl/mcproxy-2017.08.24~93b5ace4.tar.zst)<br>|
-|bridgemngr|1.0.9|GPL-2.0-only||[bridgemngr](./dl/bridgemngr-1.0.9-18c2921a1cf5bfa027c11c5e6ca605ef69fd1168.tar.gz)<br>|
-|ethmngr|2.1.10|GPL-2.0-only||[ethmngr](./dl/ethmngr-2.1.10_2d35e86cc8dfd7ef4e0d8579f5d314e90faadc90.tar.xz)<br>|
-|fdtextract|1.0-r1|GPLv2||[fdtextract](./dl/fdtextract-1.0-e3cefda3b26c9aea3021b20725ce7b31b33eebc4.tar.gz)<br>|
-|libdpp|2.1.1|LGPL-2.1-only||[libdpp](./dl/libdpp-2.1.1_6024efd3db9dd490c07465ea9b0c15120063165c.tar.xz)<br>|
-|libeasy|7.4.5|LGPL-2.1-only||[libeasy](./dl/libeasy-7.4.5_67e6b91b8aca4c068a71f097f5f0576b47ec1d2e.tar.xz)<br>|
-|libethernet|7.2.111|LGPL-2.1-only||[libethernet](./dl/libethernet-7.2.111_6e7216e657dfb59e869e393ef58e6b4593c16fc7.tar.xz)<br>|
-|libqos|7.2.108|LGPL-2.1-only||[libqos](./dl/libqos-7.2.108_6a72e35e1a662e2f707e4901679676a9c09b3bc2.tar.xz)<br>|
-|libwifi|7.10.9|LGPL-2.1-only||[libwifi](./dl/libwifi-7.10.9_b2718296b4312e0bb6bd4cab802453d696a666d2.tar.xz)<br>|
-|libwifiutils|7.10.9|LGPL-2.1-only||[libwifiutils](./dl/libwifi-7.10.9_b2718296b4312e0bb6bd4cab802453d696a666d2.tar.xz)<br>|
-|logmngr|1.0.7|GPL-2.0-only||[logmngr](./dl/logmngr-1.0.7.tar.gz)<br>|
-|mcastmngr|1.2.8|GPL-2.0-only||[mcastmngr](./dl/mcastmngr-1.2.8-275d7e5448333e53f8bc980344b39f7f577d4664.tar.gz)<br>|
-|netmode|1.0.1-r1|GPL-2.0-only|||
-|qosmngr|1.0.17|GPL-2.0-only||[qosmngr](./dl/qosmngr-1.0.17-c723a2c999bb982030df2a47a69f356bfafa0af7.tar.gz)<br>|
-|questd|5.2.5|GPL-2.0-only||[questd](./dl/questd-5.2.5-38af3655416c80933f89f5a03638403a7c051a42.tar.gz)<br>|
-|rulengd|1.2.11-r1|GPL-2.0-only||[rulengd](./dl/rulengd-1.2.11-8fabf294cc056fd9a85cad06e81bd11df64e23a3.tar.gz)<br>|
-|self-diagnostics|1.0.11-r1|GPL-2.0-only|||
-|wifimngr|17.5.9|GPL-2.0-only||[wifimngr](./dl/wifimngr-17.5.9_dca2859f6bb2c0ba68dff996d693d00a4a21bdf0.tar.xz)<br>|
-|evtest|1.35-r1|GPL-2.0-or-later||[evtest](./dl/evtest-1.35.tar.zst)<br>|
-|gpiod-tools|1.6.4-r1|LGPL-2.1-or-later||[gpiod-tools](./dl/libgpiod-1.6.4.tar.xz)<br>|
-|iptables-mod-ipmark|3.26-r1|GPL-2.0||[iptables-mod-ipmark](./dl/xtables-addons-3.26.tar.xz)<br>|
-|libaio|0.3.113-r3|LGPL-2.1-only|cpe:/a:libaio_project:libaio|[libaio](./dl/libaio-0.3.113.tar.gz)<br>|
-|libgcrypt|1.10.3-r1|LGPL-2.1-or-later|cpe:/a:gnupg:libgcrypt|[libgcrypt](./dl/libgcrypt-1.10.3.tar.bz2)<br>|
-|libgpg-error|1.49-r1|LGPL-2.1-or-later|cpe:/a:gnupg:libgpg-error|[libgpg-error](./dl/libgpg-error-1.49.tar.bz2)<br>|
-|libgpiod|1.6.4-r1|LGPL-2.1-or-later||[libgpiod](./dl/libgpiod-1.6.4.tar.xz)<br>|
-|libzstd|1.5.6-r1|GPL-2.0-or-later||[libzstd](./dl/zstd-1.5.6.tar.gz)<br>|
-|mmc-utils|2024.03.05~e1281d4d-r1|GPL-2.0-only||[mmc-utils](./dl/mmc-utils-2024.03.05~e1281d4d.tar.zst)<br>|
-|quota|4.09-r2|GPL-2.0-or-later|cpe:/a:jan_kara:linux_diskquota|[quota](./dl/quota-4.09.tar.gz)<br>|
-|squashfs-tools-mksquashfs|4.6.1-r1|GPL-2.0-only|cpe:/a:squashfs-tools_project:squashfs-tools|[squashfs-tools-mksquashfs](./dl/squashfs-tools-4.6.1.tar.gz)<br>|
-|sysstat|12.7.5-r2|GPL-2.0-or-later|cpe:/a:sysstat_project:sysstat|[sysstat](./dl/sysstat-12.7.5.tar.xz)<br>|

@@ -13,24 +13,19 @@ Index: mtd-utils-2.1.4/ubi-utils/Makemodule.am
 ===================================================================
 --- mtd-utils-2.1.4.orig/ubi-utils/Makemodule.am
 +++ mtd-utils-2.1.4/ubi-utils/Makemodule.am
-@@ -40,13 +40,16 @@ ubirsvol_LDADD = libmtd.a libubi.a
- ubiblock_SOURCES = ubi-utils/ubiblock.c
- ubiblock_LDADD = libmtd.a libubi.a
+@@ -43,8 +43,11 @@
+ ubihealthd_SOURCES = ubi-utils/ubihealthd.c
+ ubihealthd_LDADD = libmtd.a libubi.a
  
 +deubinize_SOURCES = ubi-utils/deubinize.c
 +deubinize_LDADD = libmtd.a libubi.a
 +
- if WITH_GETRANDOM
- ubihealthd_SOURCES = ubi-utils/ubihealthd.c
- ubihealthd_LDADD = libmtd.a libubi.a
- endif
- 
  sbin_PROGRAMS += \
 -	ubiupdatevol ubimkvol ubirmvol ubicrc32 ubinfo ubiattach \
 +	ubiupdatevol ubimkvol ubirmvol ubicrc32 ubinfo ubiattach deubinize \
  	ubidetach ubinize ubiformat ubirename mtdinfo ubirsvol ubiblock ubiscan
  
- if WITH_GETRANDOM
+ if WITH_UBIHEALTHD
 Index: mtd-utils-2.1.4/ubi-utils/deubinize.c
 ===================================================================
 --- /dev/null

@@ -1,8 +1,6 @@
-Index: pjproject-2.13.1/pjlib/include/pj/config_site.h
-===================================================================
---- pjproject-2.13.1.orig/pjlib/include/pj/config_site.h
-+++ pjproject-2.13.1/pjlib/include/pj/config_site.h
-@@ -29,17 +29,18 @@
+--- a/pjlib/include/pj/config_site.h
++++ b/pjlib/include/pj/config_site.h
+@@ -38,17 +38,18 @@
  #define PJ_OS_HAS_CHECK_STACK	0
  
  #ifndef PJ_LOG_MAX_LEVEL
@@ -25,11 +23,10 @@ Index: pjproject-2.13.1/pjlib/include/pj/config_site.h
  
  /*
   * Do not ever enable PJ_HASH_USE_OWN_TOLOWER because the algorithm is
-@@ -81,3 +82,21 @@
- #define PJSIP_TSX_UAS_CONTINUE_ON_TP_ERROR 0
+@@ -91,6 +92,24 @@
  #define PJ_SSL_SOCK_OSSL_USE_THREAD_CB 0
  #define PJSIP_AUTH_ALLOW_MULTIPLE_AUTH_HEADER 1
-+
+ 
 +#define PJMEDIA_HAS_SPEEX_AEC         0
 +#define PJ_HAS_ERROR_STRING           0
 +#define PJ_CRC32_HAS_TABLES           0
@@ -47,3 +44,7 @@ Index: pjproject-2.13.1/pjlib/include/pj/config_site.h
 +#define PJSIP_POOL_TSX_INC            128
 +#define PJMEDIA_SESSION_SIZE          1000
 +#define PJMEDIA_SESSION_INC           1000
++
+ /*
+  * The default is 32 with 8 being used by pjproject itself.
+  * Since this value is used in invites, dialogs, transports
