@@ -1,0 +1,124 @@
+From 8c121a4078bb86c2745d58bc0d7c02dfd233c4cd Mon Sep 17 00:00:00 2001
+From: Anjan Chanda <anjan.chanda@iopsys.eu>
+Date: Thu, 13 May 2021 12:49:28 +0200
+Subject: [PATCH] add lua bindings for easy-soc-libs libwifi backend
+
+---
+ include/iwinfo/lua.h |  3 ++
+ iwinfo_lua.c         | 72 ++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 75 insertions(+)
+
+diff --git a/include/iwinfo/lua.h b/include/iwinfo/lua.h
+index 8b76b25..51b4065 100644
+--- a/include/iwinfo/lua.h
++++ b/include/iwinfo/lua.h
+@@ -41,6 +41,9 @@
+ #define IWINFO_NL80211_META	"iwinfo.nl80211"
+ #endif
+ 
++#ifdef USE_ESL
++#define IWINFO_ESL_META		"iwinfo.esl"
++#endif
+ 
+ #define LUA_REG(type,op) \
+ 	{ #op, iwinfo_L_##type##_##op }
+diff --git a/iwinfo_lua.c b/iwinfo_lua.c
+index e49e454..22a6272 100644
+--- a/iwinfo_lua.c
++++ b/iwinfo_lua.c
+@@ -679,6 +679,36 @@ static int iwinfo_L_countrylist(lua_State *L, int (*func)(const char *, char *,
+ }
+ 
+ 
++#ifdef USE_ESL
++/* Easy-Soc-Libs */
++LUA_WRAP_INT_OP(esl,channel)
++LUA_WRAP_INT_OP(esl,frequency)
++LUA_WRAP_INT_OP(esl,frequency_offset)
++LUA_WRAP_INT_OP(esl,txpower)
++LUA_WRAP_INT_OP(esl,txpower_offset)
++LUA_WRAP_INT_OP(esl,bitrate)
++LUA_WRAP_INT_OP(esl,signal)
++LUA_WRAP_INT_OP(esl,noise)
++LUA_WRAP_INT_OP(esl,quality)
++LUA_WRAP_INT_OP(esl,quality_max)
++LUA_WRAP_STRING_OP(esl,ssid)
++LUA_WRAP_STRING_OP(esl,bssid)
++LUA_WRAP_STRING_OP(esl,country)
++LUA_WRAP_STRING_OP(esl,hardware_name)
++LUA_WRAP_STRING_OP(esl,phyname)
++LUA_WRAP_STRUCT_OP(esl,mode)
++LUA_WRAP_STRUCT_OP(esl,assoclist)
++LUA_WRAP_STRUCT_OP(esl,txpwrlist)
++LUA_WRAP_STRUCT_OP(esl,scanlist)
++LUA_WRAP_STRUCT_OP(esl,freqlist)
++LUA_WRAP_STRUCT_OP(esl,countrylist)
++LUA_WRAP_STRUCT_OP(esl,hwmodelist)
++LUA_WRAP_STRUCT_OP(esl,htmodelist)
++LUA_WRAP_STRUCT_OP(esl,encryption)
++LUA_WRAP_STRUCT_OP(esl,mbssid_support)
++LUA_WRAP_STRUCT_OP(esl,hardware_id)
++#endif
++
+ #ifdef USE_WL
+ /* Broadcom */
+ LUA_WRAP_INT_OP(wl,channel)
+@@ -797,6 +827,39 @@ LUA_WRAP_STRUCT_OP(wext,encryption)
+ LUA_WRAP_STRUCT_OP(wext,mbssid_support)
+ LUA_WRAP_STRUCT_OP(wext,hardware_id)
+ 
++#ifdef USE_ESL
++/* Easy-Soc-Libs table */
++static const luaL_reg R_esl[] = {
++	LUA_REG(esl,channel),
++	LUA_REG(esl,frequency),
++	LUA_REG(esl,frequency_offset),
++	LUA_REG(esl,txpower),
++	LUA_REG(esl,txpower_offset),
++	LUA_REG(esl,bitrate),
++	LUA_REG(esl,signal),
++	LUA_REG(esl,noise),
++	LUA_REG(esl,quality),
++	LUA_REG(esl,quality_max),
++	LUA_REG(esl,mode),
++	LUA_REG(esl,ssid),
++	LUA_REG(esl,bssid),
++	LUA_REG(esl,country),
++	LUA_REG(esl,assoclist),
++	LUA_REG(esl,txpwrlist),
++	LUA_REG(esl,scanlist),
++	LUA_REG(esl,freqlist),
++	LUA_REG(esl,countrylist),
++	LUA_REG(esl,hwmodelist),
++	LUA_REG(esl,htmodelist),
++	LUA_REG(esl,encryption),
++	LUA_REG(esl,mbssid_support),
++	LUA_REG(esl,hardware_id),
++	LUA_REG(esl,hardware_name),
++	LUA_REG(esl,phyname),
++	{ NULL, NULL }
++};
++#endif
++
+ #ifdef USE_WL
+ /* Broadcom table */
+ static const luaL_reg R_wl[] = {
+@@ -938,6 +1001,15 @@ static const luaL_reg R_common[] = {
+ LUALIB_API int luaopen_iwinfo(lua_State *L) {
+ 	luaL_register(L, IWINFO_META, R_common);
+ 
++#ifdef USE_ESL
++	luaL_newmetatable(L, IWINFO_ESL_META);
++	luaL_register(L, NULL, R_common);
++	luaL_register(L, NULL, R_esl);
++	lua_pushvalue(L, -1);
++	lua_setfield(L, -2, "__index");
++	lua_setfield(L, -2, "esl");
++#endif
++
+ #ifdef USE_WL
+ 	luaL_newmetatable(L, IWINFO_WL_META);
+ 	luaL_register(L, NULL, R_common);
+-- 
+2.25.1
+

@@ -1,0 +1,52 @@
+diff --git a/scripts/netifd-wireless.sh b/scripts/netifd-wireless.sh
+index 7f088cc..938a20c 100644
+--- a/scripts/netifd-wireless.sh
++++ b/scripts/netifd-wireless.sh
+@@ -221,10 +221,10 @@ wireless_vif_parse_encryption() {
+ 	case "$encryption" in
+ 		*tkip+aes|*tkip+ccmp|*aes+tkip|*ccmp+tkip) wpa_cipher="CCMP TKIP";;
+ 		*ccmp256) wpa_cipher="CCMP-256";;
+-		*aes|*ccmp) wpa_cipher="CCMP";;
+-		*tkip) wpa_cipher="TKIP";;
++		*aes| *ccmp | psk2 | wpa2 | sae* | owe | dpp) wpa_cipher="CCMP";;
++		*tkip | wpa | psk ) wpa_cipher="TKIP";;
+ 		*gcmp256) wpa_cipher="GCMP-256";;
+-		*gcmp) wpa_cipher="GCMP";;
++		*gcmp | *sae-ext-key) wpa_cipher="GCMP";;
+ 		wpa3-192*) wpa_cipher="GCMP-256";;
+ 	esac
+ 
+@@ -237,7 +237,7 @@ wireless_vif_parse_encryption() {
+ 	# wpa2/tkip+aes     => WPA2 RADIUS, CCMP+TKIP
+ 
+ 	case "$encryption" in
+-		wpa2*|wpa3*|*psk2*|psk3*|sae*|owe*)
++		wpa2*|wpa3*|*psk2*|psk3*|*sae*|owe*|dpp)
+ 			wpa=2
+ 		;;
+ 		wpa*mixed*|*psk*mixed*)
+@@ -269,7 +269,7 @@ wireless_vif_parse_encryption() {
+ 		psk3-mixed*|sae-mixed*)
+ 			auth_type=psk-sae
+ 		;;
+-		psk3*|sae*)
++		psk3*|*sae*)
+ 			auth_type=sae
+ 		;;
+ 		*psk*)
+@@ -290,6 +290,15 @@ wireless_vif_parse_encryption() {
+ 				;;
+ 			esac
+ 		;;
++		sae-ext-key)
++			auth_type=sae-ext-key
++		;;
++		ft-sae-ext-key)
++			auth_type=ft-sae-ext-key
++		;;
++		dpp)
++			auth_type=dpp;
++		;;
+ 	esac
+ 
+ 	case "$encryption" in
