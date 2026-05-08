@@ -1,0 +1,13 @@
+diff --git a/linux/linux_qos.c b/linux/linux_qos.c
+index a0e2378..40bf235 100644
+--- a/linux/linux_qos.c
++++ b/linux/linux_qos.c
+@@ -82,7 +82,7 @@ static  void get_stat(struct nl_object *obj)
+ 	q->tx_dropped_packets = rtnl_tc_get_stat(tc, RTNL_TC_DROPS);
+ 	g.count++;
+ 
+-	if (g.count > MAXQES) {
++	if (g.count >= MAXQES) {
+ 		g.count = 0;
+ 	}
+ }

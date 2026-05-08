@@ -1,0 +1,15 @@
+diff --git a/mcproxy/src/proxy/timing.cpp b/mcproxy/src/proxy/timing.cpp
+index 5d92ab9..30b74ae 100644
+--- a/mcproxy/src/proxy/timing.cpp
++++ b/mcproxy/src/proxy/timing.cpp
+@@ -87,6 +87,10 @@ void timing::add_time(std::chrono::milliseconds delay, const worker* msg_worker,
+ 
+     std::lock_guard<std::mutex> lock(m_global_lock);
+ 
++    while (m_db.count(until) > 0) {
++        until += std::chrono::milliseconds(1);
++    }
++
+     m_db.insert(timing_db_pair(until, std::make_tuple(msg_worker, pr_msg)));
+     m_con_var.notify_one();
+ }

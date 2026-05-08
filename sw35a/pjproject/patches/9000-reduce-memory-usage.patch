@@ -1,0 +1,50 @@
+--- a/pjlib/include/pj/config_site.h
++++ b/pjlib/include/pj/config_site.h
+@@ -38,17 +38,18 @@
+ #define PJ_OS_HAS_CHECK_STACK	0
+ 
+ #ifndef PJ_LOG_MAX_LEVEL
+-#define PJ_LOG_MAX_LEVEL		6
++#define PJ_LOG_MAX_LEVEL		3
+ #endif
+ 
+-#define PJ_ENABLE_EXTRA_CHECK	1
+-#define PJSIP_MAX_TSX_COUNT		((64*1024)-1)
+-#define PJSIP_MAX_DIALOG_COUNT	((64*1024)-1)
++#define PJ_ENABLE_EXTRA_CHECK	0
++#define PJSIP_MAX_TSX_COUNT		31
++#define PJSIP_MAX_DIALOG_COUNT	31
+ #define PJSIP_UDP_SO_SNDBUF_SIZE	(512*1024)
+ #define PJSIP_UDP_SO_RCVBUF_SIZE	(512*1024)
+ #define PJ_DEBUG			0
+ #define PJSIP_SAFE_MODULE		0
+ #define PJ_HAS_STRICMP_ALNUM		0
++#define PJSUA_MAX_CALLS		31
+ 
+ /*
+  * Do not ever enable PJ_HASH_USE_OWN_TOLOWER because the algorithm is
+@@ -91,6 +92,24 @@
+ #define PJ_SSL_SOCK_OSSL_USE_THREAD_CB 0
+ #define PJSIP_AUTH_ALLOW_MULTIPLE_AUTH_HEADER 1
+ 
++#define PJMEDIA_HAS_SPEEX_AEC         0
++#define PJ_HAS_ERROR_STRING           0
++#define PJ_CRC32_HAS_TABLES           0
++#define PJSIP_POOL_LEN_ENDPT          1000
++#define PJSIP_POOL_INC_ENDPT          1000
++#define PJSIP_POOL_RDATA_LEN          2000
++#define PJSIP_POOL_RDATA_INC          2000
++#define PJSIP_POOL_LEN_TDATA          2000
++#define PJSIP_POOL_INC_TDATA          512
++#define PJSIP_POOL_LEN_UA             2000
++#define PJSIP_POOL_INC_UA             1000
++#define PJSIP_POOL_TSX_LAYER_LEN      256
++#define PJSIP_POOL_TSX_LAYER_INC      256
++#define PJSIP_POOL_TSX_LEN            512
++#define PJSIP_POOL_TSX_INC            128
++#define PJMEDIA_SESSION_SIZE          1000
++#define PJMEDIA_SESSION_INC           1000
++
+ /*
+  * The default is 32 with 8 being used by pjproject itself.
+  * Since this value is used in invites, dialogs, transports

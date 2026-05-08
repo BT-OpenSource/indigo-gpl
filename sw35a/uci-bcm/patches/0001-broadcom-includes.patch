@@ -1,0 +1,30 @@
+From d82b87b6338f5d448281690219210d095c6ed9f0 Mon Sep 17 00:00:00 2001
+From: Lukasz Kotasa <lukasz.kotasa@iopsys.eu>
+Date: Fri, 10 Feb 2023 09:15:29 +0100
+Subject: [PATCH] Broadcom includes
+
+---
+ CMakeLists.txt | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 50e7f51fe5fa..4cd784ef53e0 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -23,11 +23,11 @@ FIND_PATH(ubox_include_dir libubox/usock.h)
+ 
+ CONFIGURE_FILE( ${CMAKE_SOURCE_DIR}/uci_config.h.in ${CMAKE_SOURCE_DIR}/uci_config.h )
+ 
+-INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR} ${ubox_include_dir})
++INCLUDE_DIRECTORIES(${ubox_include_dir}/bcm963xx)
+ 
+ SET(LIB_SOURCES libuci.c file.c util.c delta.c parse.c blob.c)
+ 
+-FIND_LIBRARY(ubox NAMES ubox)
++FIND_LIBRARY(ubox NAMES ubox HINTS "${CMAKE_PREFIX_PATH}/usr/lib/broadcom")
+ IF(BUILD_STATIC)
+   FIND_LIBRARY(ubox-static NAMES libubox.a)
+ ENDIF(BUILD_STATIC)
+-- 
+2.41.0
+
